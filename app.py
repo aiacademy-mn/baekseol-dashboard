@@ -191,7 +191,9 @@ if check_password():
         total_opex = operating_expenses_df['Мөнгөн дүн'].sum()
         total_cash_expenses = filtered_expenses['Мөнгөн дүн'].sum()
         
-        total_accrual_expenses = total_labor_cost + total_materials_cost + total_product_cogs + total_opex
+        # Exclude total_labor_cost from accrual expenses because the actual paid salaries (including base and commissions)
+        # are already recorded under the "Цалин" category inside total_opex in the expenses registry.
+        total_accrual_expenses = total_materials_cost + total_product_cogs + total_opex
         accrual_net_profit = total_accrual_rev - total_accrual_expenses
         
         # Commissions
