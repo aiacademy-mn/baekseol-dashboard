@@ -176,8 +176,8 @@ def parse_daily_sales(excel_file, service_master, product_master):
             
             payments = {}
             payment_cols = [
-                "Данс - Компани", "Данс - Ундармаа", "POS - Компани", 
-                "POS - Ундармаа", "QPay", "Бэлэн", "Pocket", "Omni", "Бартер"
+                "Данс — Компани", "Данс — Ундармаа", "POS — Компани", 
+                "POS — Ундармаа", "QPay", "Бэлэн", "Pocket", "Omni", "Бартер"
             ]
             for i, col_name in enumerate(payment_cols):
                 try:
