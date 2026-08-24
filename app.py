@@ -80,7 +80,6 @@ if check_password():
         purchases_df = data["purchases"]
         prod_warehouse = data["product_warehouse"]
         mat_warehouse = data["material_warehouse"]
-        salary_calc = data["salary_calc"]
         
         # Sidebar Controls
         st.sidebar.markdown("### ⚙️ Сонголтууд")
