@@ -266,6 +266,40 @@ if check_password():
         
         # TAB 1: EXECUTIVE SUMMARY
         with tab_summary:
+            st.markdown("### 🎯 Борлуулалтын зорилтот KPIs (Төлөвлөгөө ба Биелэлт)")
+            
+            # Actual values for targets
+            act_total_rev = total_cash_rev
+            act_service_rev = filtered_sales['service_cash'].sum() if not filtered_sales.empty else 0.0
+            act_product_rev = filtered_sales['product_cash'].sum() if not filtered_sales.empty else 0.0
+            
+            # Clean asset value
+            asset_val_clean = 0.0
+            if not prod_warehouse.empty and 'Нийт хөрөнгийн дүн' in prod_warehouse.columns:
+                asset_val_clean = pd.to_numeric(prod_warehouse['Нийт хөрөнгийн дүн'], errors='coerce').fillna(0.0).sum()
+                
+            # Build target dataset
+            targets_data = [
+                {"Үзүүлэлт": "Нийт Орлого (Cash)", "Зорилт": 150000000, "Гүйцэтгэл": act_total_rev},
+                {"Үзүүлэлт": "Үйлчилгээний Орлого", "Зорилт": 80000000, "Гүйцэтгэл": act_service_rev},
+                {"Үзүүлэлт": "Бүтээгдэхүүний Орлого", "Зорилт": 70000000, "Гүйцэтгэл": act_product_rev}
+            ]
+            
+            targets_df = pd.DataFrame(targets_data)
+            targets_df["Биелэлт %"] = (targets_df["Гүйцэтгэл"] / targets_df["Зорилт"] * 100).fillna(0.0)
+            targets_df["Дутуу дүн"] = (targets_df["Зорилт"] - targets_df["Гүйцэтгэл"]).apply(lambda x: max(0.0, x))
+            
+            # Formatting
+            disp_targets = targets_df.copy()
+            for col in ["Зорилт", "Гүйцэтгэл", "Дутуу дүн"]:
+                disp_targets[col] = disp_targets[col].map('{:,.0f} ₮'.format)
+            disp_targets["Биелэлт %"] = disp_targets["Биелэлт %"].map('{:.2f}%'.format)
+            
+            # Display target table
+            st.dataframe(disp_targets, use_container_width=True, hide_index=True)
+            st.info(f"🏢 **Агуулахын нийт бүтээгдэхүүний хөрөнгө:** `{asset_val_clean:,.0f} ₮`")
+            st.markdown("<br>", unsafe_allow_html=True)
+            
             st.subheader("🔥 Гол үзүүлэлтүүд (KPIs)")
             col1, col2, col3, col4 = st.columns(4)
             
@@ -341,7 +375,68 @@ if check_password():
                     <div style="font-size:12px; color:#666; margin-top:5px;">(Байгууллагын нийт үзүүлэх өртэй үйлчилгээний дүн)</div>
                 </div>
                 """, unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            # Cash Flow Details Table
+            st.markdown("### 💵 Мөнгөний Бодит Урсгал (Төлбөрийн хэлбэр ба Шимтгэлүүд)")
+            payment_sums = {}
+            for idx, row in filtered_sales.iterrows():
+                for pay_type, val in row['payments'].items():
+                    payment_sums[pay_type] = payment_sums.get(pay_type, 0.0) + val
+                    
+            commission_rates = {
+                "Данс — Компани": 0.0,
+                "Данс — Ундармаа": 0.0,
+                "POS — Компани": 0.01,
+                "POS — Ундармаа": 0.01,
+                "QPay": 0.01,
+                "Бэлэн": 0.0,
+                "Pocket": 0.065,
+                "Omni": 0.06,
+                "Бартер": 0.0
+            }
+            
+            cf_rows = []
+            total_cf_amt = 0.0
+            total_cf_comm = 0.0
+            total_cf_net = 0.0
+            
+            for pay_type, rate in commission_rates.items():
+                amt = payment_sums.get(pay_type, 0.0)
+                comm = amt * rate
+                net = amt - comm
                 
+                total_cf_amt += amt
+                total_cf_comm += comm
+                total_cf_net += net
+                
+                cf_rows.append({
+                    "Төлбөрийн хэлбэр": pay_type,
+                    "Нийт төлбөр": amt,
+                    "Шимтгэл %": f"{rate*100:.1f}%" if rate > 0 else "0%",
+                    "Хасагдах шимтгэл": comm,
+                    "Цэвэр авах дүн": net,
+                    "Мөнгөн төлөв": "🟢 Зардалгүй" if rate == 0 else ("🟡 1% Шимтгэл" if rate <= 0.01 else "🔴 Өндөр шимтгэл")
+                })
+                
+            cf_df = pd.DataFrame(cf_rows)
+            
+            # Format numbers for display
+            disp_cf = cf_df.copy()
+            for col in ["Нийт төлбөр", "Хасагдах шимтгэл", "Цэвэр авах дүн"]:
+                disp_cf[col] = disp_cf[col].map('{:,.0f} ₮'.format)
+                
+            # Add TOTAL row
+            disp_cf.loc[len(disp_cf)] = [
+                "🔥 НИЙТ", 
+                f"{total_cf_amt:,.0f} ₮", 
+                "-", 
+                f"{total_cf_comm:,.0f} ₮", 
+                f"{total_cf_net:,.0f} ₮",
+                "📈"
+            ]
+            
+            st.dataframe(disp_cf, use_container_width=True, hide_index=True)
             st.markdown("<br>", unsafe_allow_html=True)
             
             # AI or Static Summary Note
@@ -616,76 +711,111 @@ if check_password():
             else:
                 st.info("Сонгосон хугацаанд зардлын бүртгэл байхгүй байна.")
                 
-        # TAB 6: AI ASSISTANT (AI Нягтлан бодогч)
+        # TAB 6: AI CONSULTANT (AI Зөвлөх)
         with tab_ai:
-            st.subheader("🤖 AI Нягтлан бодогч")
-            st.markdown("Салоны санхүү, орлого, ашиг алдагдал болон агуулахын талаар асуух зүйлээ доор бичнэ үү.")
+            st.subheader("🤖 AI Бизнес Зөвлөх")
             
-            if not has_ai:
-                st.warning("⚠️ **Анхааруулга:** AI-тай чатлахын тулд зүүн талын цэсэнд **Gemini API Key**-ээ оруулах шаардлагатай.")
-            else:
-                # Chat logic
-                if "messages" not in st.session_state:
-                    st.session_state.messages = []
+            sub_tab_chat, sub_tab_strategy = st.tabs(["💬 AI Нягтлан бодогч (Чат)", "📈 Маркетингийн стратеги & Зардал оновчлол"])
+            
+            with sub_tab_chat:
+                st.markdown("Салоны санхүү, орлого, ашиг алдагдал болон агуулахын талаар асуух зүйлээ доор бичнэ үү.")
                 
-                # Display chat messages from history
-                for message in st.session_state.messages:
-                    with st.chat_message(message["role"]):
-                        st.markdown(message["content"])
-                
-                # Input box
-                if user_prompt := st.chat_input("Энд асуултаа бичнэ үү (Жишээ нь: Өнөөдрийн бодит ашиг хэд байна?):"):
-                    # Display user message
-                    with st.chat_message("user"):
-                        st.markdown(user_prompt)
-                    # Add to history
-                    st.session_state.messages.append({"role": "user", "content": user_prompt})
+                if not has_ai:
+                    st.warning("⚠️ **Анхааруулга:** AI-тай чатлахын тулд зүүн талын цэсэнд **Gemini API Key**-ээ оруулах шаардлагатай.")
+                else:
+                    # Chat logic
+                    if "messages" not in st.session_state:
+                        st.session_state.messages = []
                     
-                    # Generate live data summary to inject into prompt context
-                    context_data = get_current_data_summary()
+                    # Display chat messages from history
+                    for message in st.session_state.messages:
+                        with st.chat_message(message["role"]):
+                            st.markdown(message["content"])
                     
-                    system_instructions = f"""
-Та Baekseol Beauty салоны ухаалаг "AI Нягтлан бодогч" юм. Таны зорилго бол хэрэглэгчид өөрийнх нь өгөгдөл дээр үндэслэн санхүүгийн бодит мэдээлэл, ашиг алдагдал, үлдэгдлийг тодорхойлж тайлбарлахад туслах юм.
-Маш чухал: Ухаалаг, цэгцтэй, Монгол хэлээр хариулна. Хэрэв тодорхой хугацаа эсвэл өдрийн тухай асуувал доорх өгөгдөл дотроос тухайн өдрийн орлого зардлыг шүүж аваад тоо бодож тайлбарлана.
-
-Одоогийн дашбордын өгөгдлийн хураангуй:
-{context_data}
-"""
-                    
-                    # Call Gemini streaming
-                    with st.chat_message("assistant"):
-                        message_placeholder = st.empty()
+                    # Input box
+                    if user_prompt := st.chat_input("Энд асуултаа бичнэ үү (Жишээ нь: Өнөөдрийн бодит ашиг хэд байна?):"):
+                        # Display user message
+                        with st.chat_message("user"):
+                            st.markdown(user_prompt)
+                        # Add to history
+                        st.session_state.messages.append({"role": "user", "content": user_prompt})
                         
-                        try:
-                            # Reconstruct conversation structure for API
-                            # Gather last 5 messages for history
-                            history_messages = st.session_state.messages[-6:-1]
-                            formatted_history = ""
-                            for m in history_messages:
-                                formatted_history += f"{m['role'].capitalize()}: {m['content']}\n"
+                        # Generate live data summary to inject into prompt context
+                        context_data = get_current_data_summary()
+                        
+                        system_instructions = f"""
+    Та Baekseol Beauty салоны ухаалаг "AI Нягтлан бодогч" юм. Таны зорилго бол хэрэглэгчид өөрийнх нь өгөгдөл дээр үндэслэн санхүүгийн бодит мэдээлэл, ашиг алдагдал, үлдэгдлийг тодорхойлж тайлбарлахад туслах юм.
+    Маш чухал: Ухаалаг, цэгцтэй, Монгол хэлээр хариулна. Хэрэв тодорхой хугацаа эсвэл өдрийн тухай асуувал доорх өгөгдөл дотроос тухайн өдрийн орлого зардлыг шүүж аваад тоо бодож тайлбарлана.
+    
+    Одоогийн дашбордын өгөгдлийн хураангуй:
+    {context_data}
+    """
+                        
+                        # Call Gemini streaming
+                        with st.chat_message("assistant"):
+                            message_placeholder = st.empty()
+                            
+                            try:
+                                # Reconstruct conversation structure for API
+                                # Gather last 5 messages for history
+                                history_messages = st.session_state.messages[-6:-1]
+                                formatted_history = ""
+                                for m in history_messages:
+                                    formatted_history += f"{m['role'].capitalize()}: {m['content']}\n"
+                                    
+                                full_prompt = f"""
+    {system_instructions}
+    
+    Өмнөх харилцан яриа:
+    {formatted_history}
+    
+    Хэрэглэгчийн асуулт: {user_prompt}
+    
+    AI хариулт:
+    """
+                                model = genai.GenerativeModel("gemini-3.6-flash")
+                                response = model.generate_content(full_prompt, stream=True)
                                 
-                            full_prompt = f"""
-{system_instructions}
-
-Өмнөх харилцан яриа:
-{formatted_history}
-
-Хэрэглэгчийн асуулт: {user_prompt}
-
-AI хариулт:
-"""
+                                full_response = ""
+                                for chunk in response:
+                                    full_response += chunk.text
+                                    message_placeholder.markdown(full_response + "▌")
+                                
+                                message_placeholder.markdown(full_response)
+                                # Add assistant response to history
+                                st.session_state.messages.append({"role": "assistant", "content": full_response})
+                            except Exception as e:
+                                st.error(f"Алдаа гарлаа: {e}")
+                                
+            with sub_tab_strategy:
+                st.markdown("### 📈 Өгөгдөлд суурилсан маркетингийн төлөвлөгөө ба алдагдлыг бууруулах зөвлөмжүүд")
+                
+                if not has_ai:
+                    st.warning("⚠️ **Анхааруулга:** AI зөвлөмжийг авахын тулд зүүн талын цэсэнд **Gemini API Key**-ээ оруулах шаардлагатай.")
+                else:
+                    @st.cache_data(ttl=1800)  # Cache for 30 minutes
+                    def generate_marketing_strategy(data_summary_str):
+                        try:
                             model = genai.GenerativeModel("gemini-3.6-flash")
-                            response = model.generate_content(full_prompt, stream=True)
-                            
-                            full_response = ""
-                            for chunk in response:
-                                full_response += chunk.text
-                                message_placeholder.markdown(full_response + "▌")
-                            
-                            message_placeholder.markdown(full_response)
-                            # Add assistant response to history
-                            st.session_state.messages.append({"role": "assistant", "content": full_response})
+                            prompt = f"""
+Та гоо сайхны салоны бизнесийн стратеги хариуцсан AI Зөвлөх юм. Доор өгөгдсөн санхүү, борлуулалт, зардлын бодит өгөгдөлд дүн шинжилгээ хийж, удирдлагын хэмжээний зөвлөмж бэлтгэж өгнө үү.
+Ялангуяа:
+1. **Алдагдал бууруулах зөвлөмж:** Төлбөрийн хэлбэрүүдийн шимтгэл (POS 1%, QPay 1%, Pocket 6.5%, Omni 6% г.м)-д дүн шинжилгээ хийж, шимтгэлийн зардлыг хэрхэн бууруулах зөвлөмж. Мөн одоогийн ашиг алдагдлыг эерэг болгох зардлын хэмнэлтийн боломжууд.
+2. **Маркетингийн төлөвлөгөө ба контент стратеги:** Аль үйлчилгээ болон бүтээгдэхүүнийг түлхүү зарах хэрэгтэй вэ? (Хамгийн өндөр борлуулалттай эсвэл хамгийн өндөр ашгийн маржинтай байгаагаар нь уялдуулах). Харилцагч татах ямар контент, урамшуулал хийх вэ?
+3. **Өр төлбөрийн менежмент:** 6.8 сая ₮-ний үлдэгдэл курс үйлчилгээний өр төлбөрийг хэрхэн зөв удирдаж, ажлын ачааллыг төлөвлөх вэ?
+
+Өгөгдөл:
+{data_summary_str}
+
+Хариултыг Монгол хэлээр, маш ойлгомжтой, цэгцтэй Markdown форматтай, гарчиг дэд хэсэгтэйгээр бэлтгэж өгнө үү.
+"""
+                            response = model.generate_content(prompt)
+                            return response.text
                         except Exception as e:
-                            st.error(f"Алдаа гарлаа: {e}")
+                            return f"AI-аар зөвлөмж бэлтгэхэд алдаа гарлаа: {e}"
+                            
+                    with st.spinner("AI зөвлөх борлуулалтын стратеги, зардлын оновчлолыг тооцоолж байна..."):
+                        strategy_report = generate_marketing_strategy(get_current_data_summary())
+                    st.markdown(strategy_report)
     else:
         st.error("Google Sheets-ээс мэдээллийг татаж чадсангүй. Та сүлжээний холболтоо эсвэл Google Sheets-ийн холбоосыг шалгана уу.")
