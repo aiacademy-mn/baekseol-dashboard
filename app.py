@@ -80,6 +80,7 @@ if check_password():
         purchases_df = data["purchases"]
         prod_warehouse = data["product_warehouse"]
         mat_warehouse = data["material_warehouse"]
+        salary_calc = data["salary_calc"]
         
         # Sidebar Controls
         st.sidebar.markdown("### ⚙️ Сонголтууд")
@@ -187,12 +188,15 @@ if check_password():
                 total_product_cogs += qty * unit_cost
                 
         # 4. Operating Expenses (OpEx)
+        # We keep the "Цалин" category from the ledger (ЗАРЛАГЫН_БҮРТГЭЛ) to match actual paid wages,
+        # but exclude "Бараа материал" to prevent double counting with product COGS.
         operating_expenses_df = filtered_expenses[filtered_expenses['Үндсэн ангилал'] != 'Бараа материал']
         total_opex = operating_expenses_df['Мөнгөн дүн'].sum()
         total_cash_expenses = filtered_expenses['Мөнгөн дүн'].sum()
         
-        # Exclude total_labor_cost from accrual expenses because the actual paid salaries (including base and commissions)
-        # are already recorded under the "Цалин" category inside total_opex in the expenses registry.
+        # Calculate Total Accrual Expenses:
+        # Salaries in total_opex (from ЗАРЛАГЫН_БҮРТГЭЛ) already include base and bonus commissions.
+        # Therefore, we do NOT add the service-calculated total_labor_cost here to prevent double counting.
         total_accrual_expenses = total_materials_cost + total_product_cogs + total_opex
         accrual_net_profit = total_accrual_rev - total_accrual_expenses
         
@@ -233,10 +237,10 @@ if check_password():
    - Хэрэгжсэн Бодит Цэвэр Ашиг (P&L): {accrual_net_profit:,.0f} MNT
    - Бэлэн Мөнгөний Орлого: {total_cash_rev:,.0f} MNT
    - Цэвэр Мөнгөн Урсгал (Кассны үлдэгдэл зөрүү): {cash_flow_net:,.0f} MNT
-   - Нийт үйлчилгээний ажлын хөлс (цалин): {total_labor_cost:,.0f} MNT
+   - Нийт үйлчилгээний ажлын хөлс бонус (тооцоолсон): {total_labor_cost:,.0f} MNT
    - Нийт үйлчилгээний материалын өртөг (BOM): {total_materials_cost:,.0f} MNT
    - Нийт зарагдсан бүтээгдэхүүний өртөг (COGS): {total_product_cogs:,.0f} MNT
-   - Үйл ажиллагааны зардлууд (байр, маркетинг гэх мэт): {total_opex:,.0f} MNT
+   - Үйл ажиллагааны зардлууд (байр, цалин, маркетинг гэх мэт): {total_opex:,.0f} MNT
    - Гарсан шимтгэл хураамж: {total_commissions:,.0f} MNT
 
 2. Үйлчилгээний жагсаалт:

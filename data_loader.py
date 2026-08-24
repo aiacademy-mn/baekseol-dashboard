@@ -244,6 +244,29 @@ def parse_product_inventory_purchases(excel_file):
         st.warning(f"Error reading БАРАА_БҮРТГЭЛ: {e}")
         return pd.DataFrame()
 
+def parse_salary_calculation(excel_file):
+    try:
+        # Read dates from first two rows
+        df_dates = pd.read_excel(excel_file, sheet_name="ЦАЛИН_БОДОЛТ", header=None, nrows=2)
+        start_date = pd.to_datetime(df_dates.iloc[1, 0], errors='coerce')
+        end_date = pd.to_datetime(df_dates.iloc[1, 1], errors='coerce')
+        
+        df = pd.read_excel(excel_file, sheet_name="ЦАЛИН_БОДОЛТ", header=3)
+        df = df.dropna(subset=["Овог нэр"])
+        df["Олгох цалин"] = pd.to_numeric(df["Олгох цалин"], errors="coerce").fillna(0.0)
+        df["Хийсэн ажлын бонус"] = pd.to_numeric(df["Хийсэн ажлын бонус"], errors="coerce").fillna(0.0)
+        df["Хугацааны үндсэн цалин (50%)"] = pd.to_numeric(df["Хугацааны үндсэн цалин (50%)"], errors="coerce").fillna(0.0)
+        df["Нэмэгдэл"] = pd.to_numeric(df["Нэмэгдэл"], errors="coerce").fillna(0.0)
+        df["Суутгал/Өр"] = pd.to_numeric(df["Суутгал/Өр"], errors="coerce").fillna(0.0)
+        
+        # Save metadata
+        df.attrs["start_date"] = start_date
+        df.attrs["end_date"] = end_date
+        return df
+    except Exception as e:
+        st.warning(f"Error reading ЦАЛИН_БОДОЛТ: {e}")
+        return pd.DataFrame()
+
 def get_processed_data():
     excel_file = load_workbook_data()
     if excel_file is None:
@@ -258,6 +281,7 @@ def get_processed_data():
     purchases = parse_product_inventory_purchases(excel_file)
     prod_warehouse = parse_product_warehouse(excel_file)
     mat_warehouse = parse_material_warehouse(excel_file)
+    salary_calc = parse_salary_calculation(excel_file)
     
     return {
         "service_master": service_master,
@@ -267,5 +291,6 @@ def get_processed_data():
         "sales": sales,
         "purchases": purchases,
         "product_warehouse": prod_warehouse,
-        "material_warehouse": mat_warehouse
+        "material_warehouse": mat_warehouse,
+        "salary_calc": salary_calc
     }
