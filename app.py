@@ -80,6 +80,8 @@ if check_password():
         purchases_df = data["purchases"]
         prod_warehouse = data["product_warehouse"]
         mat_warehouse = data["material_warehouse"]
+        course_master = data["course_master"]
+        payment_master = data["payment_master"]
         
         # Sidebar Controls
         st.sidebar.markdown("### ⚙️ Сонголтууд")
@@ -259,7 +261,7 @@ if check_password():
         # Multi-tab layout
         tab_summary, tab_services, tab_products, tab_inventory, tab_expenses, tab_ai = st.tabs([
             "📊 Ерөнхий тойм", "💇 Үйлчилгээний шинжилгээ", "📦 Бүтээгдэхүүний борлуулалт", 
-            "🏢 Агуулахын үлдэгдэл", "💸 Зардлын шинжилгээ", "🤖 AI Туслах"
+            "🏢 Агуулах & Өр төлбөр", "💸 Зардлын шинжилгээ", "🤖 AI Туслах"
         ])
         
         # TAB 1: EXECUTIVE SUMMARY
@@ -302,6 +304,41 @@ if check_password():
                     <div class="metric-label">💵 Цэвэр Мөнгөн Урсгал</div>
                     <div class="metric-value" style="color: {cf_color};">{cash_flow_net:,.0f} ₮</div>
                     <div style="font-size:12px; color:#666; margin-top:5px;">(Орсон мөнгө - Зарлага - Шимтгэл)</div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            # Calculate Liabilities
+            col_name = course_master.columns[13] if len(course_master.columns) > 13 else "Байгууллагын өр"
+            total_course_liability = course_master[col_name].sum() if not course_master.empty else 0.0
+            total_prepayment_liability = payment_master['Үлдэгдэл'].sum() if not payment_master.empty else 0.0
+            total_deferred_liabilities = total_course_liability + total_prepayment_liability
+            
+            st.markdown("### 🏦 Урьдчилгаа ба Багц Үйлчилгээний Өр төлбөр (Deferred Revenue)")
+            col_l1, col_l2, col_l3 = st.columns(3)
+            with col_l1:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <div class="metric-label">⏳ Эргэн Төлөх Үлдэгдэл Курс (Байгууллагын Өр)</div>
+                    <div class="metric-value" style="color: #E28743;">{total_course_liability:,.0f} ₮</div>
+                    <div style="font-size:12px; color:#666; margin-top:5px;">(Худалдаж авсан боловч ороогүй үлдсэн курсын дүн)</div>
+                </div>
+                """, unsafe_allow_html=True)
+            with col_l2:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <div class="metric-label">💳 Урьдчилгаа Төлбөрийн Үлдэгдэл</div>
+                    <div class="metric-value" style="color: #E28743;">{total_prepayment_liability:,.0f} ₮</div>
+                    <div style="font-size:12px; color:#666; margin-top:5px;">(Цагийн болон бусад урьдчилж орсон ашиглаагүй дүн)</div>
+                </div>
+                """, unsafe_allow_html=True)
+            with col_l3:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <div class="metric-label">📊 Нийт Үйлчилгээ Хариуцах Өр (Total Liabilities)</div>
+                    <div class="metric-value" style="color: #C0392B; font-weight: bold;">{total_deferred_liabilities:,.0f} ₮</div>
+                    <div style="font-size:12px; color:#666; margin-top:5px;">(Байгууллагын нийт үзүүлэх өртэй үйлчилгээний дүн)</div>
                 </div>
                 """, unsafe_allow_html=True)
                 
@@ -519,7 +556,33 @@ if check_password():
                     st.dataframe(disp_mw, use_container_width=True, hide_index=True)
                 else:
                     st.info("Агуулахын материалын мэдээлэл олдсонгүй.")
+            
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.markdown("### 💳 Идэвхтэй урьдчилгаа төлбөр бүхий үйлчлүүлэгчид (Prepayments)")
+            
+            if not payment_master.empty:
+                # Filter for rows where remaining balance (Үлдэгдэл) > 0
+                active_prepayments = payment_master[payment_master['Үлдэгдэл'] > 0].copy()
+                if not active_prepayments.empty:
+                    # Sort by balance descending
+                    active_prepayments = active_prepayments.sort_values(by='Үлдэгдэл', ascending=False)
+                    # Format dates
+                    if 'Огноо' in active_prepayments.columns:
+                        active_prepayments['Огноо'] = pd.to_datetime(active_prepayments['Огноо']).dt.strftime('%Y-%m-%d')
                     
+                    # Format currency columns
+                    for col in ['Орсон мөнгө', 'Ашигласан мөнгө', 'Үлдэгдэл']:
+                        if col in active_prepayments.columns:
+                            active_prepayments[col] = active_prepayments[col].map('{:,.0f} ₮'.format)
+                            
+                    cols_to_show = ['Огноо', 'Нэр', 'Утас', 'Гүйлгээний төрөл', 'Орсон мөнгө', 'Ашигласан мөнгө', 'Үлдэгдэл', 'Тайлбар']
+                    cols_to_show = [c for c in cols_to_show if c in active_prepayments.columns]
+                    st.dataframe(active_prepayments[cols_to_show], use_container_width=True, hide_index=True)
+                else:
+                    st.info("Идэвхтэй урьдчилгаа төлбөрийн үлдэгдэлтэй хэрэглэгч байхгүй байна.")
+            else:
+                st.info("Урьдчилгаа төлбөрийн мэдээлэл олдсонгүй.")
+                
         # TAB 5: EXPENSE ANALYSIS
         with tab_expenses:
             st.subheader("💸 Үйл ажиллагааны зардлын задаргаа")

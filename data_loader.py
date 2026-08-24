@@ -267,6 +267,27 @@ def parse_salary_calculation(excel_file):
         st.warning(f"Error reading ЦАЛИН_БОДОЛТ: {e}")
         return pd.DataFrame()
 
+def parse_course_master(excel_file):
+    try:
+        df = pd.read_excel(excel_file, sheet_name="COURSE_MASTER")
+        col_name = df.columns[13] if len(df.columns) > 13 else "Байгууллагын өр"
+        df[col_name] = pd.to_numeric(df[col_name], errors='coerce').fillna(0.0)
+        return df
+    except Exception as e:
+        st.warning(f"Error reading COURSE_MASTER: {e}")
+        return pd.DataFrame()
+
+def parse_payment_master(excel_file):
+    try:
+        df = pd.read_excel(excel_file, sheet_name="PAYMENT_MASTER")
+        df['Үлдэгдэл'] = pd.to_numeric(df['Үлдэгдэл'], errors='coerce').fillna(0.0)
+        df['Орсон мөнгө'] = pd.to_numeric(df['Орсон мөнгө'], errors='coerce').fillna(0.0)
+        df['Ашигласан мөнгө'] = pd.to_numeric(df['Ашигласан мөнгө'], errors='coerce').fillna(0.0)
+        return df
+    except Exception as e:
+        st.warning(f"Error reading PAYMENT_MASTER: {e}")
+        return pd.DataFrame()
+
 def get_processed_data():
     excel_file = load_workbook_data()
     if excel_file is None:
@@ -282,6 +303,8 @@ def get_processed_data():
     prod_warehouse = parse_product_warehouse(excel_file)
     mat_warehouse = parse_material_warehouse(excel_file)
     salary_calc = parse_salary_calculation(excel_file)
+    course_master = parse_course_master(excel_file)
+    payment_master = parse_payment_master(excel_file)
     
     return {
         "service_master": service_master,
@@ -292,5 +315,7 @@ def get_processed_data():
         "purchases": purchases,
         "product_warehouse": prod_warehouse,
         "material_warehouse": mat_warehouse,
-        "salary_calc": salary_calc
+        "salary_calc": salary_calc,
+        "course_master": course_master,
+        "payment_master": payment_master
     }
