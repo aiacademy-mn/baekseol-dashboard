@@ -1088,7 +1088,7 @@ if check_password():
     
     AI хариулт:
     """
-                                model = genai.GenerativeModel("gemini-3.6-flash")
+                                model = genai.GenerativeModel("gemini-2.5-flash")
                                 response = model.generate_content(full_prompt, stream=True)
                                 
                                 full_response = ""
@@ -1111,7 +1111,7 @@ if check_password():
                     @st.cache_data(ttl=1800)  # Cache for 30 minutes
                     def generate_marketing_strategy(data_summary_str):
                         try:
-                            model = genai.GenerativeModel("gemini-3.6-flash")
+                            model = genai.GenerativeModel("gemini-2.5-flash")
                             prompt = f"""
 Та гоо сайхны салоны бизнесийн стратеги хариуцсан AI Зөвлөх юм. Доор өгөгдсөн санхүү, борлуулалт, зардлын бодит өгөгдөлд дүн шинжилгээ хийж, удирдлагын хэмжээний зөвлөмж бэлтгэж өгнө үү.
 Ялангуяа:
