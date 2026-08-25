@@ -82,6 +82,168 @@ if check_password():
         mat_warehouse = data["material_warehouse"]
         course_master = data["course_master"]
         payment_master = data["payment_master"]
+        recipe_bom = data["recipe_bom"]
+        
+        # 1. Function to reconstruct course liabilities as of end_dt
+        def get_course_liabilities_as_of(end_dt, course_master, sales_df, service_master):
+            service_cost_map = {}
+            if not service_master.empty:
+                for idx, s_row in service_master.iterrows():
+                    name = str(s_row['Үйлчилгээний нэр']).strip()
+                    labor = float(s_row['Ажлын хөлс (₮)']) if not pd.isna(s_row['Ажлын хөлс (₮)']) else 0.0
+                    material = float(s_row['Материалын өртөг (₮)']) if not pd.isna(s_row['Материалын өртөг (₮)']) else 0.0
+                    service_cost_map[name] = labor + material
+                    
+            if course_master.empty:
+                return 0.0, 0.0
+                
+            sales_after = sales_df[sales_df['date'] > end_dt] if not sales_df.empty else pd.DataFrame()
+            total_selling_val = 0.0
+            total_cost_val = 0.0
+            
+            for idx, c_row in course_master.iterrows():
+                cust_name = str(c_row['Нэр']).strip()
+                phone = str(c_row['Утас']).strip()
+                service = str(c_row['Үйлчилгээ']).strip()
+                curr_rem = float(c_row['Үлдсэн оролт']) if not pd.isna(c_row['Үлдсэн оролт']) else 0.0
+                unit_price = float(c_row['Нэгж оролтын үнэ']) if not pd.isna(c_row['Нэгж оролтын үнэ']) else 0.0
+                
+                used_after = 0.0
+                purchased_after_sessions = 0.0
+                
+                if not sales_after.empty:
+                    cust_sales = sales_after[
+                        (sales_after['customer'].str.contains(cust_name, case=False, na=False)) |
+                        (sales_after['customer'] == cust_name)
+                    ]
+                    cust_service_sales = cust_sales[cust_sales['service_name'] == service]
+                    used_after = cust_service_sales['course_sessions_used'].sum()
+                    
+                    purchases = cust_service_sales[cust_service_sales['service_cash'] >= 300000]
+                    for p_idx, p_row in purchases.iterrows():
+                        if unit_price > 0:
+                            purchased_after_sessions += round(p_row['service_cash'] / unit_price)
+                        else:
+                            purchased_after_sessions += 5.0
+                            
+                rem_as_of = curr_rem + used_after - purchased_after_sessions
+                rem_as_of = max(0.0, rem_as_of)
+                
+                selling_debt = rem_as_of * unit_price
+                cost = service_cost_map.get(service, 0.0)
+                if cost == 0.0:
+                    for k, v in service_cost_map.items():
+                        if k in service or service in k:
+                            cost = v
+                            break
+                cost_debt = rem_as_of * cost
+                
+                total_selling_val += selling_debt
+                total_cost_val += cost_debt
+                
+            return total_selling_val, total_cost_val
+            
+        # 2. Function to rollback product warehouse inventory as of end_dt
+        def roll_back_prod_warehouse(end_dt, prod_warehouse, sales_df, purchases_df):
+            if prod_warehouse.empty:
+                return prod_warehouse
+            pw = prod_warehouse.copy()
+            sales_after = sales_df[sales_df['date'] > end_dt] if not sales_df.empty else pd.DataFrame()
+            purchases_after = purchases_df[purchases_df['Огноо'] > end_dt] if not purchases_df.empty else pd.DataFrame()
+            
+            sales_sums = {}
+            if not sales_after.empty:
+                for idx, row in sales_after.iterrows():
+                    for p_name, qty in row['product_qtys'].items():
+                        sales_sums[p_name] = sales_sums.get(p_name, 0.0) + qty
+                        
+            purchases_sums = {}
+            if not purchases_after.empty:
+                for idx, row in purchases_after.iterrows():
+                    p_name = str(row['Материалын нэр']).strip()
+                    qty = float(row['Тоо хэмжээ']) if not pd.isna(row['Тоо хэмжээ']) else 0.0
+                    purchases_sums[p_name] = purchases_sums.get(p_name, 0.0) + qty
+                    
+            recalc_rows = []
+            for idx, row in pw.iterrows():
+                name = str(row['Материалын нэр']).strip()
+                curr_stock = float(row['Одоогийн үлдэгдэл']) if not pd.isna(row['Одоогийн үлдэгдэл']) else 0.0
+                unit_cost = float(row['Худалдан авсан үнэ']) if not pd.isna(row['Худалдан авсан үнэ']) else 0.0
+                
+                sold_after = sales_sums.get(name, 0.0)
+                if sold_after == 0.0:
+                    for k, v in sales_sums.items():
+                        if k in name or name in k:
+                            sold_after = v
+                            break
+                            
+                bought_after = purchases_sums.get(name, 0.0)
+                if bought_after == 0.0:
+                    for k, v in purchases_sums.items():
+                        if k in name or name in k:
+                            bought_after = v
+                            break
+                            
+                stock_as_of = max(0.0, curr_stock + sold_after - bought_after)
+                row['Одоогийн үлдэгдэл'] = stock_as_of
+                row['Нийт хөрөнгийн дүн'] = stock_as_of * unit_cost
+                recalc_rows.append(row)
+            return pd.DataFrame(recalc_rows)
+            
+        # 3. Function to rollback material warehouse inventory as of end_dt
+        def roll_back_mat_warehouse(end_dt, mat_warehouse, sales_df, purchases_df, bom_df):
+            if mat_warehouse.empty:
+                return mat_warehouse
+            mw = mat_warehouse.copy()
+            sales_after = sales_df[sales_df['date'] > end_dt] if not sales_df.empty else pd.DataFrame()
+            purchases_after = purchases_df[purchases_df['Огноо'] > end_dt] if not purchases_df.empty else pd.DataFrame()
+            
+            mat_used_sums = {}
+            if not sales_after.empty and not bom_df.empty:
+                for idx, row in sales_after.iterrows():
+                    srv = row['service_name']
+                    if srv != "":
+                        recipe = bom_df[bom_df['Үйлчилгээний нэр'] == srv]
+                        if recipe.empty:
+                            for k in bom_df['Үйлчилгээний нэр'].unique():
+                                if k in srv or srv in k:
+                                    recipe = bom_df[bom_df['Үйлчилгээний нэр'] == k]
+                                    break
+                        for r_idx, r_row in recipe.iterrows():
+                            m_name = str(r_row['Материалын нэр']).strip()
+                            qty = float(r_row['Орц хэмжээ']) if not pd.isna(r_row['Орц хэмжээ']) else 0.0
+                            mat_used_sums[m_name] = mat_used_sums.get(m_name, 0.0) + qty
+                            
+            mat_bought_sums = {}
+            if not purchases_after.empty:
+                for idx, row in purchases_after.iterrows():
+                    name = str(row['Материалын нэр']).strip()
+                    qty = float(row['Тоо хэмжээ']) if not pd.isna(row['Тоо хэмжээ']) else 0.0
+                    mat_bought_sums[name] = mat_bought_sums.get(name, 0.0) + qty
+                    
+            recalc_rows = []
+            for idx, row in mw.iterrows():
+                name = str(row['Материалын нэр']).strip()
+                curr_stock = float(row['Одоогийн үлдэгдэл']) if not pd.isna(row['Одоогийн үлдэгдэл']) else 0.0
+                
+                used_after = mat_used_sums.get(name, 0.0)
+                if used_after == 0.0:
+                    for k, v in mat_used_sums.items():
+                        if k in name or name in k:
+                            used_after = v
+                            break
+                            
+                bought_after = mat_bought_sums.get(name, 0.0)
+                if bought_after == 0.0:
+                    for k, v in mat_bought_sums.items():
+                        if k in name or name in k:
+                            bought_after = v
+                            break
+                            
+                stock_as_of = max(0.0, curr_stock + used_after - bought_after)
+                row['Одоогийн үлдэгдэл'] = stock_as_of
+                recalc_rows.append(row)
+            return pd.DataFrame(recalc_rows)
         
         # Sidebar Controls
         st.sidebar.markdown("### ⚙️ Сонголтууд")
@@ -158,6 +320,10 @@ if check_password():
         filtered_sales = sales_df[(sales_df['date'] >= start_dt) & (sales_df['date'] <= end_dt)]
         filtered_expenses = expense_df[(expense_df['Огноо'] >= start_dt) & (expense_df['Огноо'] <= end_dt)]
         
+        # Roll back warehouses dynamically to end_dt
+        rolled_prod_warehouse = roll_back_prod_warehouse(end_dt, prod_warehouse, sales_df, purchases_df)
+        rolled_mat_warehouse = roll_back_mat_warehouse(end_dt, mat_warehouse, sales_df, purchases_df, recipe_bom)
+        
         # Build unit cost mapping for products
         product_cost_map = {}
         for idx, row in product_master.iterrows():
@@ -222,17 +388,32 @@ if check_password():
         total_accrual_expenses = total_materials_cost + total_product_cogs + total_opex
         accrual_net_profit = total_accrual_rev - total_accrual_expenses
         
-        # Commissions
+        # Calculate new prepayments received via QPay (Column E) in PAYMENT_MASTER for the selected period
+        new_prepays_received_period = 0.0
+        if not payment_master.empty:
+            pm_df = payment_master.copy()
+            pm_df['Огноо'] = pd.to_datetime(pm_df['Огноо'], errors='coerce')
+            pm_filtered = pm_df[(pm_df['Огноо'] >= start_dt) & (pm_df['Огноо'] <= end_dt)]
+            new_prepays_received_period = pm_filtered['Орсон мөнгө'].sum()
+            
+        # Commissions and Actual Payments Received
         total_commissions = 0.0
+        barter_amt = 0.0
         for idx, row in filtered_sales.iterrows():
-            pos_company = row['payments'].get("POS - Компани", 0.0)
-            pos_unda = row['payments'].get("POS - Ундармаа", 0.0)
+            pos_company = row['payments'].get("POS — Компани", 0.0) + row['payments'].get("POS - Компани", 0.0)
+            pos_unda = row['payments'].get("POS — Ундармаа", 0.0) + row['payments'].get("POS - Ундармаа", 0.0)
             qpay = row['payments'].get("QPay", 0.0)
             pocket = row['payments'].get("Pocket", 0.0)
             omni = row['payments'].get("Omni", 0.0)
             total_commissions += (pos_company + pos_unda + qpay) * 0.01 + pocket * 0.065 + omni * 0.06
+            barter_amt += row['payments'].get("Бартер", 0.0)
             
-        cash_flow_net = total_cash_rev - total_cash_expenses - total_commissions
+        total_prepays_used_period = filtered_sales['hourly_prepay_used'].sum() + filtered_sales['course_prepay_used'].sum() if not filtered_sales.empty else 0.0
+        
+        # Calculate actual cash payments total (ТӨЛБӨРИЙН НИЙТ)
+        sheet_total_payments = total_cash_rev - total_prepays_used_period + new_prepays_received_period - barter_amt
+        
+        cash_flow_net = sheet_total_payments - total_cash_expenses - total_commissions
         
         # Calculate Cost Value of Course Liability
         service_cost_map = {}
@@ -257,13 +438,7 @@ if check_password():
                 if cost is not None:
                     total_course_cost_liability += rem_sessions * cost
                     
-        # Calculate new prepayments received via QPay (Column E) in PAYMENT_MASTER for the selected period
-        new_prepays_received_period = 0.0
-        if not payment_master.empty:
-            pm_df = payment_master.copy()
-            pm_df['Огноо'] = pd.to_datetime(pm_df['Огноо'], errors='coerce')
-            pm_filtered = pm_df[(pm_df['Огноо'] >= start_dt) & (pm_df['Огноо'] <= end_dt)]
-            new_prepays_received_period = pm_filtered['Орсон мөнгө'].sum()
+
         
         # Generate context for AI
         def get_current_data_summary():
@@ -306,7 +481,7 @@ if check_password():
 {filtered_expenses[['Огноо', 'Үндсэн ангилал', 'Зарлагын нэр (Дэд ангилал)', 'Мөнгөн дүн', 'Тайлбар']].to_string(index=False) if not filtered_expenses.empty else "Байхгүй"}
 
 5. Агуулахын бүтээгдэхүүний үлдэгдэл:
-{prod_warehouse[['Материалын код', 'Материалын нэр', 'Одоогийн үлдэгдэл', 'Нийт хөрөнгийн дүн']].to_string(index=False) if not prod_warehouse.empty else "Байхгүй"}
+{rolled_prod_warehouse[['Материалын код', 'Материалын нэр', 'Одоогийн үлдэгдэл', 'Нийт хөрөнгийн дүн']].to_string(index=False) if not rolled_prod_warehouse.empty else "Байхгүй"}
 """
             return summary_str
 
@@ -327,8 +502,8 @@ if check_password():
             
             # Clean asset value
             asset_val_clean = 0.0
-            if not prod_warehouse.empty and 'Нийт хөрөнгийн дүн' in prod_warehouse.columns:
-                asset_val_clean = pd.to_numeric(prod_warehouse['Нийт хөрөнгийн дүн'], errors='coerce').fillna(0.0).sum()
+            if not rolled_prod_warehouse.empty and 'Нийт хөрөнгийн дүн' in rolled_prod_warehouse.columns:
+                asset_val_clean = pd.to_numeric(rolled_prod_warehouse['Нийт хөрөнгийн дүн'], errors='coerce').fillna(0.0).sum()
                 
             # Build target dataset
             targets_data = [
@@ -353,72 +528,71 @@ if check_password():
             st.markdown("<br>", unsafe_allow_html=True)
             
             st.subheader("🔥 Гол үзүүлэлтүүд (KPIs)")
-            col1, col2, col3, col4 = st.columns(4)
+            col1, col2, col3, col4, col5 = st.columns(5)
             
             with col1:
                 st.markdown(f"""
                 <div class="metric-card">
-                    <div class="metric-label">📊 Хэрэгжсэн Бодит Орлого</div>
+                    <div class="metric-label">📈 Хэрэгжсэн Бодит Орлого</div>
                     <div class="metric-value">{total_accrual_rev:,.0f} ₮</div>
-                    <div style="font-size:12px; color:green; margin-top:5px;">(Үзүүлсэн үйлчилгээний бодит дүн)</div>
+                    <div style="font-size:11px; color:green; margin-top:5px;">(Үзүүлсэн үйлчилгээ + бараа)</div>
                 </div>
                 """, unsafe_allow_html=True)
                 
             with col2:
-                color = "green" if accrual_net_profit >= 0 else "red"
                 st.markdown(f"""
                 <div class="metric-card">
-                    <div class="metric-label">📈 Хэрэгжсэн Бодит Цэвэр Ашиг (P&L)</div>
-                    <div class="metric-value" style="color: {color};">{accrual_net_profit:,.0f} ₮</div>
-                    <div style="font-size:12px; color:#666; margin-top:5px;">(Орлого - Өртөг - Үйл ажиллагааны зардал)</div>
+                    <div class="metric-label">💸 Нийт Зарлага (Expenses)</div>
+                    <div class="metric-value" style="color: #C0392B;">{total_accrual_expenses:,.0f} ₮</div>
+                    <div style="font-size:11px; color:#666; margin-top:5px;">(Өртөг + Үйл ажиллагааны зардал)</div>
                 </div>
                 """, unsafe_allow_html=True)
                 
             with col3:
+                color = "green" if accrual_net_profit >= 0 else "red"
                 st.markdown(f"""
                 <div class="metric-card">
-                    <div class="metric-label">💰 Бэлэн Мөнгөний Орлого</div>
-                    <div class="metric-value">{total_cash_rev:,.0f} ₮</div>
-                    <div style="font-size:12px; color:#666; margin-top:5px;">(Касс болон дансанд орсон дүн)</div>
+                    <div class="metric-label">📊 Хэрэгжсэн Бодит Цэвэр Ашиг</div>
+                    <div class="metric-value" style="color: {color}; font-weight: bold;">{accrual_net_profit:,.0f} ₮</div>
+                    <div style="font-size:11px; color:#666; margin-top:5px;">(Бодит Орлого - Нийт Зарлага)</div>
                 </div>
                 """, unsafe_allow_html=True)
                 
             with col4:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <div class="metric-label">💰 Бэлэн Мөнгөний Орлого</div>
+                    <div class="metric-value">{total_cash_rev:,.0f} ₮</div>
+                    <div style="font-size:11px; color:#666; margin-top:5px;">(Касс болон дансанд орсон дүн)</div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+            with col5:
                 cf_color = "green" if cash_flow_net >= 0 else "red"
                 st.markdown(f"""
                 <div class="metric-card">
                     <div class="metric-label">💵 Цэвэр Мөнгөн Урсгал</div>
                     <div class="metric-value" style="color: {cf_color};">{cash_flow_net:,.0f} ₮</div>
-                    <div style="font-size:12px; color:#666; margin-top:5px;">(Орсон мөнгө - Зарлага - Шимтгэл)</div>
+                    <div style="font-size:11px; color:#666; margin-top:5px;">(Орсон мөнгө - Зарлага - Шимтгэл)</div>
                 </div>
                 """, unsafe_allow_html=True)
                 
             st.markdown("<br>", unsafe_allow_html=True)
             
-            # Calculate Liabilities
-            col_name = course_master.columns[13] if len(course_master.columns) > 13 else "Байгууллагын өр"
-            total_course_liability = course_master[col_name].sum() if not course_master.empty else 0.0
-            total_prepayment_liability = payment_master['Үлдэгдэл'].sum() if not payment_master.empty else 0.0
+            # Calculate Liabilities rolled back to end_dt!
+            total_course_liability, total_course_cost_liability = get_course_liabilities_as_of(end_dt, course_master, sales_df, service_master)
             
             st.markdown("### 🏦 Урьдчилгаа ба Багц Үйлчилгээний Өр төлбөр (Deferred Revenue)")
-            col_l1, col_l2, col_l3, col_l4 = st.columns(4)
+            col_l1, col_l2, col_l3 = st.columns(3)
             with col_l1:
                 st.markdown(f"""
                 <div class="metric-card">
                     <div class="metric-label">⏳ Эргэн Төлөх Үлдэгдэл Курс</div>
                     <div class="metric-value" style="color: #E28743;">{total_course_liability:,.0f} ₮</div>
-                    <div style="font-size:11px; color:#666; margin-top:5px;">(Үлдсэн курсуудын борлуулах үнээрх дүн)</div>
+                    <div style="font-size:11px; color:#666; margin-top:5px;">(Үлдэгдэл курсуудын борлуулах үнээрх дүн)</div>
                 </div>
                 """, unsafe_allow_html=True)
             with col_l2:
-                st.markdown(f"""
-                <div class="metric-card">
-                    <div class="metric-label">💳 Урьдчилгааны Үлдэгдэл</div>
-                    <div class="metric-value" style="color: #E28743;">{total_prepayment_liability:,.0f} ₮</div>
-                    <div style="font-size:11px; color:#666; margin-top:5px;">(Ашиглаагүй байгаа урьдчилгааны дүн)</div>
-                </div>
-                """, unsafe_allow_html=True)
-            with col_l3:
                 st.markdown(f"""
                 <div class="metric-card">
                     <div class="metric-label">📊 Өр Төлөх Бодит Өртөг</div>
@@ -426,7 +600,7 @@ if check_password():
                     <div style="font-size:11px; color:#666; margin-top:5px;">(Үлдэгдэл курсыг үзүүлэх бодит өртөг/зардал)</div>
                 </div>
                 """, unsafe_allow_html=True)
-            with col_l4:
+            with col_l3:
                 st.markdown(f"""
                 <div class="metric-card">
                     <div class="metric-label">📥 Орсон Шинэ Урьдчилгаа</div>
@@ -435,12 +609,11 @@ if check_password():
                 </div>
                 """, unsafe_allow_html=True)
                 
-            st.warning(f"""
-            ⚠️ **Нөөц хөрөнгө үүсгэх сэрэмжлүүлэг (Financial Reserve Alert for Director):**
-            Компани хэрэглэгчдээс урьдчилж мөнгө авсан тул ирээдүйд үйлчилгээ үзүүлэх өртэй байгаа. Үлдэгдэл курсуудыг бодитоор гүйцэтгэхэд гоо сайханчдын ажлын хөлс болон материалын өртөгт хамгийн багадаа **`{total_course_cost_liability:,.0f} ₮`**-ний бодит зардал гарна!
-            
-            **Тиймээс салоны данснаас энэхүү `{total_course_cost_liability:,.0f} ₮`-ийг заавал ХУРИМТЛАЛ/НӨӨЦ болгон дансандаа хадгалж үлдэх шаардлагатай!** Хэрэв урьдчилж орсон мөнгөнүүдийг орлого гэж андууран дураараа үрж ашиглавал, ирээдүйд хэрэглэгчид үйлчилгээгээ авахаар ирэх үед ажилчдын цалин ба материалын өртгийг төлөх бэлэн мөнгөгүй болж, **салон төлбөрийн чадваргүй болох (дампуурах) өндөр эрсдэлтэйг анхаарна уу!**
-            """)
+            st.markdown(f"""
+            <div style="background-color: #FFF3CD; color: #856404; padding: 12px; border-radius: 5px; font-size: 13px; border: 1px solid #FFEBAA; margin-top: 15px; margin-bottom: 15px;">
+                ⚠️ <b>Зохистой нөөцийн санамж:</b> Салоны үлдсэн курсыг үзүүлэхэд шаардлагатай бодит өртөг болох <b>{total_course_cost_liability:,.0f} ₮</b>-ийг дансандаа заавал <b>хуримтлал/нөөц</b> болгон үлдээхийг зөвлөж байна. Хэрэв урьдчилж орсон мөнгөнүүдийг орлого гэж андууран үрвэл ирээдүйд цалин ба материалын өртөг төлөх мөнгөгүйдэж, төлбөрийн чадваргүй болох эрсдэлтэй.
+            </div>
+            """, unsafe_allow_html=True)
             st.markdown("<br>", unsafe_allow_html=True)
             
             # Cash Flow Details Table
@@ -450,6 +623,9 @@ if check_password():
                 for pay_type, val in row['payments'].items():
                     payment_sums[pay_type] = payment_sums.get(pay_type, 0.0) + val
                     
+            # Add prepayment received to cash flow table
+            payment_sums["Урьдчилж орсон орлого (Prepayment Received)"] = new_prepays_received_period
+            
             commission_rates = {
                 "Данс — Компани": 0.0,
                 "Данс — Ундармаа": 0.0,
@@ -459,7 +635,8 @@ if check_password():
                 "Бэлэн": 0.0,
                 "Pocket": 0.065,
                 "Omni": 0.06,
-                "Бартер": 0.0
+                "Бартер": 0.0,
+                "Урьдчилж орсон орлого (Prepayment Received)": 0.0
             }
             
             cf_rows = []
@@ -468,7 +645,9 @@ if check_password():
             total_cf_net = 0.0
             
             for pay_type, rate in commission_rates.items():
-                amt = payment_sums.get(pay_type, 0.0)
+                # support both formats of key lookup
+                alt_pay_type = pay_type.replace("—", "-")
+                amt = payment_sums.get(pay_type, 0.0) + payment_sums.get(alt_pay_type, 0.0)
                 comm = amt * rate
                 net = amt - comm
                 
@@ -486,15 +665,13 @@ if check_password():
                 })
                 
             cf_df = pd.DataFrame(cf_rows)
-            
-            # Format numbers for display
             disp_cf = cf_df.copy()
             for col in ["Нийт төлбөр", "Хасагдах шимтгэл", "Цэвэр авах дүн"]:
                 disp_cf[col] = disp_cf[col].map('{:,.0f} ₮'.format)
                 
             # Add TOTAL row
             disp_cf.loc[len(disp_cf)] = [
-                "🔥 НИЙТ", 
+                "🔥 ТӨЛБӨРИЙН НИЙТ (Касс+Дансны орсон дүн)", 
                 f"{total_cf_amt:,.0f} ₮", 
                 "-", 
                 f"{total_cf_comm:,.0f} ₮", 
@@ -506,16 +683,16 @@ if check_password():
             st.markdown("<br>", unsafe_allow_html=True)
             
             # 1. Sales vs Payments Reconciliation Table
-            total_prepays_used_period = filtered_sales['hourly_prepay_used'].sum() + filtered_sales['course_prepay_used'].sum() if not filtered_sales.empty else 0.0
-            
             st.markdown("### 🔄 Нийт Борлуулалт ба Төлбөрийн зөрүүний тохируулга (Reconciliation)")
             st.markdown(f"""
             Дашборд болон Google Sheet-ийн тоонуудын зөрүүг шалгах тооцоолол:
             * **Нийт Борлуулалтын Орлого (Google Sheet Z багана):** `{total_cash_rev:,.0f} ₮` (Үзүүлсэн үйлчилгээ болон бүтээгдэхүүний нийлбэр дүн)
-            * (-) **Урьдчилгаанаас суутгасан дүн (Prepayments Used):** `{total_prepays_used_period:,.0f} ₮` (Өмнө нь мөнгөө төлсөн хэрэглэгчид энэ хугацаанд үйлчилгээ авсан хэсэг)
-            * (=) **Бодитоор шинээр орсон нийт төлбөр (Actual Payments Total):** `{total_cf_amt:,.0f} ₮` (Дээрх хүснэгтийн Нийт төлбөрүүдийн нийлбэр дүн)
+            * (-) **Урьдчилгаанаас хасагдсан дүн (Prepayments Used):** `{total_prepays_used_period:,.0f} ₮` (Өмнө нь мөнгөө төлсөн хэрэглэгчид үйлчилгээ авсан хэсэг)
+            * (+) **Урьдчилж орсон орлого (Prepayments Received):** `{new_prepays_received_period:,.0f} ₮` (Вэбээр шинээр төлсөн урьдчилгаа төлбөр)
+            * (-) **Бартер үйлчилгээний дүн (Barter):** `{barter_amt:,.0f} ₮` (Бартер нь бэлэн мөнгө болж ордоггүй тул хасна)
+            * (=) **ТӨЛБӨРИЙН НИЙТ (Actual Payments Total):** `{sheet_total_payments:,.0f} ₮` (Дээрх хүснэгтийн Нийт дүн)
             
-            **Тайлбар:** Хэрэглэгчид урьдчилгаа мөнгөөрөө эсвэл курсын эрхээрээ үйлчилгээ авахад шинээр бэлэн мөнгө орж ирэхгүй тул *Төлбөрийн нийт дүн* нь *Борлуулалтын орлогоос* яг энэхүү урьдчилгааны дүнгээр зөрж харагддаг.
+            **Тайлбар:** Хэрэглэгч урьдчилгаа мөнгөөр үйлчилгээ авахад бэлэн мөнгө орж ирэхгүй тул орлогоос хасагдана. Харин шинээр урьдчилж мөнгө төлөхөд үйлчилгээ үзүүлээгүй ч бэлэн мөнгө дансанд орж ирэх тул нэмэгдэнэ. Бартер нь бэлэн мөнгө биш тул хасагдаж тохируулагдана.
             """)
             
             # 2. Account Cash Flows (Данс болон Кассын нэгтгэл)
@@ -524,16 +701,19 @@ if check_password():
             inflow_cash = 0.0
             
             for idx, row in filtered_sales.iterrows():
-                inflow_company += row['payments'].get("Данс — Компани", 0.0) + row['payments'].get("POS — Компани", 0.0) + row['payments'].get("QPay", 0.0)
-                inflow_unda += row['payments'].get("Данс — Ундармаа", 0.0) + row['payments'].get("POS — Ундармаа", 0.0)
+                inflow_company += row['payments'].get("Данс — Компани", 0.0) + row['payments'].get("Данс - Компани", 0.0) + row['payments'].get("POS — Компани", 0.0) + row['payments'].get("POS - Компани", 0.0) + row['payments'].get("QPay", 0.0)
+                inflow_unda += row['payments'].get("Данс — Ундармаа", 0.0) + row['payments'].get("Данс - Ундармаа", 0.0) + row['payments'].get("POS — Ундармаа", 0.0) + row['payments'].get("POS - Ундармаа", 0.0)
                 inflow_cash += row['payments'].get("Бэлэн", 0.0)
                 
+            # Add prepayment received to company account
+            inflow_company += new_prepays_received_period
+            
             outflow_company = filtered_expenses[filtered_expenses['Хаанаас төлсөн / Касс'] == 'Компани данс']['Мөнгөн дүн'].sum() if not filtered_expenses.empty else 0.0
             outflow_unda = filtered_expenses[filtered_expenses['Хаанаас төлсөн / Касс'] == 'Захирлын данс']['Мөнгөн дүн'].sum() if not filtered_expenses.empty else 0.0
             outflow_cash = filtered_expenses[filtered_expenses['Хаанаас төлсөн / Касс'] == 'Касс бэлэн']['Мөнгөн дүн'].sum() if not filtered_expenses.empty else 0.0
             
             recon_data = [
-                {"Данс / Касс": "🏢 Компани данс (Данс + POS + QPay)", "Орлого (Inflow)": inflow_company, "Зарлага (Outflow)": outflow_company, "Цэвэр урсгал (Net)": inflow_company - outflow_company},
+                {"Данс / Касс": "🏢 Компани данс (Данс + POS + QPay + Урьдчилгаа)", "Орлого (Inflow)": inflow_company, "Зарлага (Outflow)": outflow_company, "Цэвэр урсгал (Net)": inflow_company - outflow_company},
                 {"Данс / Касс": "👩 Ундармаа/Захирлын данс", "Орлого (Inflow)": inflow_unda, "Зарлага (Outflow)": outflow_unda, "Цэвэр урсгал (Net)": inflow_unda - outflow_unda},
                 {"Данс / Касс": "💵 Касс (Бэлэн мөнгө)", "Орлого (Inflow)": inflow_cash, "Зарлага (Outflow)": outflow_cash, "Цэвэр урсгал (Net)": inflow_cash - outflow_cash}
             ]
@@ -749,8 +929,8 @@ if check_password():
             
             with col_inv1:
                 st.markdown("### 🧴 Борлуулах бүтээгдэхүүний үлдэгдэл")
-                if not prod_warehouse.empty:
-                    disp_pw = prod_warehouse[['Материалын код', 'Материалын нэр', 'Төрөл', 'Эхний үлдэгдэл', 'Нийт орлого', 'Борлуулалтын зарлага', 'Салонд задласан', 'Одоогийн үлдэгдэл', 'Нийт хөрөнгийн дүн']].copy()
+                if not rolled_prod_warehouse.empty:
+                    disp_pw = rolled_prod_warehouse[['Материалын код', 'Материалын нэр', 'Төрөл', 'Эхний үлдэгдэл', 'Нийт орлого', 'Борлуулалтын зарлага', 'Салонд задласан', 'Одоогийн үлдэгдэл', 'Нийт хөрөнгийн дүн']].copy()
                     disp_pw['Нийт хөрөнгийн дүн'] = disp_pw['Нийт хөрөнгийн дүн'].map('{:,.0f} ₮'.format)
                     with st.expander("🧴 Дэлгэрэнгүй жагсаалт харах"):
                         st.dataframe(disp_pw, use_container_width=True, hide_index=True)
@@ -759,8 +939,8 @@ if check_password():
                     
             with col_inv2:
                 st.markdown("### 🔬 Үйлчилгээний материалын үлдэгдэл")
-                if not mat_warehouse.empty:
-                    disp_mw = mat_warehouse[['Материалын код', 'Материалын нэр', 'Төрөл', 'Нэгж', 'Эхний үлдэгдэл', 'Нийт орлого', 'Үйлчилгээний зарлага', 'Нийт зарлага', 'Одоогийн үлдэгдэл']].copy()
+                if not rolled_mat_warehouse.empty:
+                    disp_mw = rolled_mat_warehouse[['Материалын код', 'Материалын нэр', 'Төрөл', 'Нэгж', 'Эхний үлдэгдэл', 'Нийт орлого', 'Үйлчилгээний зарлага', 'Нийт зарлага', 'Одоогийн үлдэгдэл']].copy()
                     with st.expander("🔬 Дэлгэрэнгүй жагсаалт харах"):
                         st.dataframe(disp_mw, use_container_width=True, hide_index=True)
                 else:
