@@ -97,41 +97,62 @@ if check_password():
         min_date = sales_df['date'].min() if not sales_df.empty else pd.Timestamp('2026-08-01')
         max_date = sales_df['date'].max() if not sales_df.empty else pd.Timestamp('2026-08-31')
         
-        # Quick Filters
-        quick_select = st.sidebar.selectbox(
-            "Хурдан сонголт:",
-            ["Бүх хугацаа", "Сүүлийн 7 хоног", "Сүүлийн 14 хоног", "Сүүлийн 30 хоног", "Энэ сар"]
+        st.sidebar.markdown("### 📅 Хугацааны шүүлтүүр")
+        period_type = st.sidebar.selectbox(
+            "Шүүх ангилал:",
+            ["Сараар", "Өдрөөр", "Улирлаар", "Жилээр", "Хувийн тохиргоо"],
+            index=0
         )
         
-        if quick_select == "Сүүлийн 7 хоног":
-            start_date = max_date - pd.Timedelta(days=6)
-            end_date = max_date
-        elif quick_select == "Сүүлийн 14 хоног":
-            start_date = max_date - pd.Timedelta(days=13)
-            end_date = max_date
-        elif quick_select == "Сүүлийн 30 хоног":
-            start_date = max_date - pd.Timedelta(days=29)
-            end_date = max_date
-        elif quick_select == "Энэ сар":
-            start_date = pd.Timestamp(max_date.year, max_date.month, 1)
-            end_date = max_date
-        else:
-            start_date = min_date
-            end_date = max_date
-            
-        custom_range = st.sidebar.date_input(
-            "Сонгосон хугацаа:",
-            value=(start_date, end_date),
-            min_value=min_date.date(),
-            max_value=max_date.date()
-        )
+        years = sorted(list(sales_df['date'].dt.year.unique())) if not sales_df.empty else [2026]
         
-        if isinstance(custom_range, tuple) and len(custom_range) == 2:
-            start_dt = pd.to_datetime(custom_range[0])
-            end_dt = pd.to_datetime(custom_range[1])
+        if period_type == "Жилээр":
+            sel_year = st.sidebar.selectbox("Жил сонгох:", years)
+            start_dt = pd.Timestamp(sel_year, 1, 1)
+            end_dt = pd.Timestamp(sel_year, 12, 31)
+        elif period_type == "Улирлаар":
+            sel_year = st.sidebar.selectbox("Жил сонгох:", years)
+            sel_quarter = st.sidebar.selectbox("Улирал сонгох:", ["1-р улирал (Q1)", "2-р улирал (Q2)", "3-р улирал (Q3)", "4-р улирал (Q4)"])
+            if "Q1" in sel_quarter:
+                start_dt = pd.Timestamp(sel_year, 1, 1)
+                end_dt = pd.Timestamp(sel_year, 3, 31)
+            elif "Q2" in sel_quarter:
+                start_dt = pd.Timestamp(sel_year, 4, 1)
+                end_dt = pd.Timestamp(sel_year, 6, 30)
+            elif "Q3" in sel_quarter:
+                start_dt = pd.Timestamp(sel_year, 7, 1)
+                end_dt = pd.Timestamp(sel_year, 9, 30)
+            else:
+                start_dt = pd.Timestamp(sel_year, 10, 1)
+                end_dt = pd.Timestamp(sel_year, 12, 31)
+        elif period_type == "Сараар":
+            sel_year = st.sidebar.selectbox("Жил сонгох:", years)
+            sel_month = st.sidebar.selectbox(
+                "Сар сонгох:",
+                [f"{i}-р сар" for i in range(1, 13)],
+                index=max_date.month - 1 if not sales_df.empty else 7
+            )
+            m_num = int(sel_month.split("-")[0])
+            start_dt = pd.Timestamp(sel_year, m_num, 1)
+            end_dt = start_dt + pd.offsets.MonthEnd(0)
+        elif period_type == "Өдрөөр":
+            sel_day = st.sidebar.date_input("Өдөр сонгох:", value=max_date.date(), min_value=min_date.date(), max_value=max_date.date())
+            start_dt = pd.to_datetime(sel_day)
+            end_dt = pd.to_datetime(sel_day)
         else:
-            start_dt = pd.to_datetime(start_date)
-            end_dt = pd.to_datetime(end_date)
+            # Custom range
+            custom_range = st.sidebar.date_input(
+                "Хугацааны муж:",
+                value=(pd.Timestamp(max_date.year, max_date.month, 1).date(), max_date.date()),
+                min_value=min_date.date(),
+                max_value=max_date.date()
+            )
+            if isinstance(custom_range, tuple) and len(custom_range) == 2:
+                start_dt = pd.to_datetime(custom_range[0])
+                end_dt = pd.to_datetime(custom_range[1])
+            else:
+                start_dt = pd.Timestamp(max_date.year, max_date.month, 1)
+                end_dt = max_date
             
         # Filter Data
         filtered_sales = sales_df[(sales_df['date'] >= start_dt) & (sales_df['date'] <= end_dt)]
@@ -212,6 +233,37 @@ if check_password():
             total_commissions += (pos_company + pos_unda + qpay) * 0.01 + pocket * 0.065 + omni * 0.06
             
         cash_flow_net = total_cash_rev - total_cash_expenses - total_commissions
+        
+        # Calculate Cost Value of Course Liability
+        service_cost_map = {}
+        if not service_master.empty:
+            for idx, s_row in service_master.iterrows():
+                name = str(s_row['Үйлчилгээний нэр']).strip()
+                labor = float(s_row['Ажлын хөлс (₮)']) if not pd.isna(s_row['Ажлын хөлс (₮)']) else 0.0
+                material = float(s_row['Материалын өртөг (₮)']) if not pd.isna(s_row['Материалын өртөг (₮)']) else 0.0
+                service_cost_map[name] = labor + material
+                
+        total_course_cost_liability = 0.0
+        if not course_master.empty:
+            for idx, c_row in course_master.iterrows():
+                srv = str(c_row['Үйлчилгээ']).strip()
+                rem_sessions = float(c_row['Үлдсэн оролт']) if not pd.isna(c_row['Үлдсэн оролт']) else 0.0
+                cost = service_cost_map.get(srv, None)
+                if cost is None:
+                    for k, v in service_cost_map.items():
+                        if k in srv or srv in k:
+                            cost = v
+                            break
+                if cost is not None:
+                    total_course_cost_liability += rem_sessions * cost
+                    
+        # Calculate new prepayments received via QPay (Column E) in PAYMENT_MASTER for the selected period
+        new_prepays_received_period = 0.0
+        if not payment_master.empty:
+            pm_df = payment_master.copy()
+            pm_df['Огноо'] = pd.to_datetime(pm_df['Огноо'], errors='coerce')
+            pm_filtered = pm_df[(pm_df['Огноо'] >= start_dt) & (pm_df['Огноо'] <= end_dt)]
+            new_prepays_received_period = pm_filtered['Орсон мөнгө'].sum()
         
         # Generate context for AI
         def get_current_data_summary():
@@ -347,10 +399,6 @@ if check_password():
             col_name = course_master.columns[13] if len(course_master.columns) > 13 else "Байгууллагын өр"
             total_course_liability = course_master[col_name].sum() if not course_master.empty else 0.0
             total_prepayment_liability = payment_master['Үлдэгдэл'].sum() if not payment_master.empty else 0.0
-            total_deferred_liabilities = total_course_liability + total_prepayment_liability
-            
-            total_prepays_used_period = filtered_sales['hourly_prepay_used'].sum() + filtered_sales['course_prepay_used'].sum() if not filtered_sales.empty else 0.0
-            total_prepaid_sessions_period = int((filtered_sales['course_sessions_used'] > 0).sum() + (filtered_sales['hourly_prepay_used'] > 0).sum()) if not filtered_sales.empty else 0
             
             st.markdown("### 🏦 Урьдчилгаа ба Багц Үйлчилгээний Өр төлбөр (Deferred Revenue)")
             col_l1, col_l2, col_l3, col_l4 = st.columns(4)
@@ -359,7 +407,7 @@ if check_password():
                 <div class="metric-card">
                     <div class="metric-label">⏳ Эргэн Төлөх Үлдэгдэл Курс</div>
                     <div class="metric-value" style="color: #E28743;">{total_course_liability:,.0f} ₮</div>
-                    <div style="font-size:11px; color:#666; margin-top:5px;">(Худалдаж авсан боловч ороогүй үлдсэн курсын дүн)</div>
+                    <div style="font-size:11px; color:#666; margin-top:5px;">(Үлдсэн курсуудын борлуулах үнээрх дүн)</div>
                 </div>
                 """, unsafe_allow_html=True)
             with col_l2:
@@ -373,19 +421,26 @@ if check_password():
             with col_l3:
                 st.markdown(f"""
                 <div class="metric-card">
-                    <div class="metric-label">📊 Нийт Үйлчилгээний Өр</div>
-                    <div class="metric-value" style="color: #C0392B; font-weight: bold;">{total_deferred_liabilities:,.0f} ₮</div>
-                    <div style="font-size:11px; color:#666; margin-top:5px;">(Байгууллагын нийт үзүүлэх өртэй үйлчилгээ)</div>
+                    <div class="metric-label">📊 Өр Төлөх Бодит Өртөг</div>
+                    <div class="metric-value" style="color: #C0392B; font-weight: bold;">{total_course_cost_liability:,.0f} ₮</div>
+                    <div style="font-size:11px; color:#666; margin-top:5px;">(Үлдэгдэл курсыг үзүүлэх бодит өртөг/зардал)</div>
                 </div>
                 """, unsafe_allow_html=True)
             with col_l4:
                 st.markdown(f"""
                 <div class="metric-card">
-                    <div class="metric-label">📉 Сонгосон сард буурсан Өр</div>
-                    <div class="metric-value" style="color: #27AE60; font-weight: bold;">{total_prepays_used_period:,.0f} ₮</div>
-                    <div style="font-size:11px; color:#27AE60; margin-top:5px;">({total_prepaid_sessions_period} удаагийн багц ашиглалт)</div>
+                    <div class="metric-label">📥 Орсон Шинэ Урьдчилгаа</div>
+                    <div class="metric-value" style="color: #27AE60; font-weight: bold;">{new_prepays_received_period:,.0f} ₮</div>
+                    <div style="font-size:11px; color:#27AE60; margin-top:5px;">(Сонгосон хугацаанд вэбээр орсон дүн)</div>
                 </div>
                 """, unsafe_allow_html=True)
+                
+            st.warning(f"""
+            ⚠️ **Нөөц хөрөнгө үүсгэх сэрэмжлүүлэг (Financial Reserve Alert for Director):**
+            Компани хэрэглэгчдээс урьдчилж мөнгө авсан тул ирээдүйд үйлчилгээ үзүүлэх өртэй байгаа. Үлдэгдэл курсуудыг бодитоор гүйцэтгэхэд гоо сайханчдын ажлын хөлс болон материалын өртөгт хамгийн багадаа **`{total_course_cost_liability:,.0f} ₮`**-ний бодит зардал гарна!
+            
+            **Тиймээс салоны данснаас энэхүү `{total_course_cost_liability:,.0f} ₮`-ийг заавал ХУРИМТЛАЛ/НӨӨЦ болгон дансандаа хадгалж үлдэх шаардлагатай!** Хэрэв урьдчилж орсон мөнгөнүүдийг орлого гэж андууран дураараа үрж ашиглавал, ирээдүйд хэрэглэгчид үйлчилгээгээ авахаар ирэх үед ажилчдын цалин ба материалын өртгийг төлөх бэлэн мөнгөгүй болж, **салон төлбөрийн чадваргүй болох (дампуурах) өндөр эрсдэлтэйг анхаарна уу!**
+            """)
             st.markdown("<br>", unsafe_allow_html=True)
             
             # Cash Flow Details Table
@@ -615,7 +670,8 @@ if check_password():
                 "Гоо сайханчийн ажлын хөлс", "Материалын өртөг (BOM)", "Нийт Өртөг", "Бодит Цэвэр Ашиг", "Ашгийн марж"
             ]
             
-            st.dataframe(display_services, use_container_width=True, hide_index=True)
+            with st.expander("🔍 Үйлчилгээний бодит ашиг, зарлагын дэлгэрэнгүй жагсаалт"):
+                st.dataframe(display_services, use_container_width=True, hide_index=True)
             
             # Beautician Performance
             st.markdown("<br>", unsafe_allow_html=True)
@@ -678,7 +734,8 @@ if check_password():
                     disp_prod[col] = disp_prod[col].map('{:,.0f} ₮'.format)
                 disp_prod["Ашгийн марж"] = disp_prod["Ашгийн марж"].map('{:.1f}%'.format)
                 
-                st.dataframe(disp_prod, use_container_width=True, hide_index=True)
+                with st.expander("🔍 Бүтээгдэхүүн бүрийн борлуулалт, ашгийн дэлгэрэнгүй жагсаалт"):
+                    st.dataframe(disp_prod, use_container_width=True, hide_index=True)
             else:
                 st.info("Сонгосон хугацаанд бүтээгдэхүүний борлуулалт байхгүй байна.")
                 
@@ -693,7 +750,8 @@ if check_password():
                 if not prod_warehouse.empty:
                     disp_pw = prod_warehouse[['Материалын код', 'Материалын нэр', 'Төрөл', 'Эхний үлдэгдэл', 'Нийт орлого', 'Борлуулалтын зарлага', 'Салонд задласан', 'Одоогийн үлдэгдэл', 'Нийт хөрөнгийн дүн']].copy()
                     disp_pw['Нийт хөрөнгийн дүн'] = disp_pw['Нийт хөрөнгийн дүн'].map('{:,.0f} ₮'.format)
-                    st.dataframe(disp_pw, use_container_width=True, hide_index=True)
+                    with st.expander("🧴 Дэлгэрэнгүй жагсаалт харах"):
+                        st.dataframe(disp_pw, use_container_width=True, hide_index=True)
                 else:
                     st.info("Агуулахын бүтээгдэхүүний мэдээлэл олдсонгүй.")
                     
@@ -701,7 +759,8 @@ if check_password():
                 st.markdown("### 🔬 Үйлчилгээний материалын үлдэгдэл")
                 if not mat_warehouse.empty:
                     disp_mw = mat_warehouse[['Материалын код', 'Материалын нэр', 'Төрөл', 'Нэгж', 'Эхний үлдэгдэл', 'Нийт орлого', 'Үйлчилгээний зарлага', 'Нийт зарлага', 'Одоогийн үлдэгдэл']].copy()
-                    st.dataframe(disp_mw, use_container_width=True, hide_index=True)
+                    with st.expander("🔬 Дэлгэрэнгүй жагсаалт харах"):
+                        st.dataframe(disp_mw, use_container_width=True, hide_index=True)
                 else:
                     st.info("Агуулахын материалын мэдээлэл олдсонгүй.")
             
@@ -725,7 +784,8 @@ if check_password():
                             
                     cols_to_show = ['Огноо', 'Нэр', 'Утас', 'Гүйлгээний төрөл', 'Орсон мөнгө', 'Ашигласан мөнгө', 'Үлдэгдэл', 'Тайлбар']
                     cols_to_show = [c for c in cols_to_show if c in active_prepayments.columns]
-                    st.dataframe(active_prepayments[cols_to_show], use_container_width=True, hide_index=True)
+                    with st.expander("💳 Идэвхтэй урьдчилгаатай хэрэглэгчдийн жагсаалт харах"):
+                        st.dataframe(active_prepayments[cols_to_show], use_container_width=True, hide_index=True)
                 else:
                     st.info("Идэвхтэй урьдчилгаа төлбөрийн үлдэгдэлтэй хэрэглэгч байхгүй байна.")
             else:
@@ -756,11 +816,8 @@ if check_password():
                     disp_exp_cat.columns = ["Зардлын ангилал", "Нийт Дүн"]
                     st.dataframe(disp_exp_cat, use_container_width=True, hide_index=True)
                     
-                st.markdown("### 📜 Бүх зарлагын жагсаалт (Сүүлийн 50 бичилт)")
-                detailed_exp = filtered_expenses.copy().sort_values(by="Огноо", ascending=False).head(50)
-                detailed_exp['Огноо'] = detailed_exp['Огноо'].dt.strftime('%Y-%m-%d')
-                detailed_exp['Мөнгөн дүн'] = detailed_exp['Мөнгөн дүн'].map('{:,.0f} ₮'.format)
-                st.dataframe(detailed_exp[['Огноо', 'Үндсэн ангилал', 'Зарлагын нэр (Дэд ангилал)', 'Мөнгөн дүн', 'Хаанаас төлсөн / Касс', 'Тайлбар']], use_container_width=True, hide_index=True)
+                with st.expander("🔍 Бүх зарлагын дэлгэрэнгүй жагсаалт харах"):
+                    st.dataframe(detailed_exp[['Огноо', 'Үндсэн ангилал', 'Зарлагын нэр (Дэд ангилал)', 'Мөнгөн дүн', 'Хаанаас төлсөн / Касс', 'Тайлбар']], use_container_width=True, hide_index=True)
             else:
                 st.info("Сонгосон хугацаанд зардлын бүртгэл байхгүй байна.")
                 
