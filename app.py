@@ -144,9 +144,16 @@ if check_password():
             return total_selling_val, total_cost_val
             
         # 2. Function to rollback product warehouse inventory as of end_dt
-        def roll_back_prod_warehouse(end_dt, prod_warehouse, sales_df, purchases_df):
+        def roll_back_prod_warehouse(end_dt, prod_warehouse, sales_df, purchases_df, product_master):
             if prod_warehouse.empty:
                 return prod_warehouse
+                
+            cost_map = {}
+            if not product_master.empty:
+                for idx, row in product_master.iterrows():
+                    name_clean = str(row['Материалын нэр_clean']).strip() if 'Материалын нэр_clean' in row else str(row['Материалын нэр']).strip()
+                    cost_map[name_clean] = float(row['Худалдан авсан үнэ']) if not pd.isna(row['Худалдан авсан үнэ']) else 0.0
+                    
             pw = prod_warehouse.copy()
             sales_after = sales_df[sales_df['date'] > end_dt] if not sales_df.empty else pd.DataFrame()
             purchases_after = purchases_df[purchases_df['Огноо'] > end_dt] if not purchases_df.empty else pd.DataFrame()
@@ -168,7 +175,17 @@ if check_password():
             for idx, row in pw.iterrows():
                 name = str(row['Материалын нэр']).strip()
                 curr_stock = float(row['Одоогийн үлдэгдэл']) if not pd.isna(row['Одоогийн үлдэгдэл']) else 0.0
-                unit_cost = float(row['Худалдан авсан үнэ']) if not pd.isna(row['Худалдан авсан үнэ']) else 0.0
+                
+                unit_cost = cost_map.get(name, 0.0)
+                if unit_cost == 0.0:
+                    for k, v in cost_map.items():
+                        if k in name or name in k:
+                            unit_cost = v
+                            break
+                if unit_cost == 0.0:
+                    tot_val = float(row['Нийт хөрөнгийн дүн']) if not pd.isna(row['Нийт хөрөнгийн дүн']) else 0.0
+                    if curr_stock > 0:
+                        unit_cost = tot_val / curr_stock
                 
                 sold_after = sales_sums.get(name, 0.0)
                 if sold_after == 0.0:
@@ -321,7 +338,7 @@ if check_password():
         filtered_expenses = expense_df[(expense_df['Огноо'] >= start_dt) & (expense_df['Огноо'] <= end_dt)]
         
         # Roll back warehouses dynamically to end_dt
-        rolled_prod_warehouse = roll_back_prod_warehouse(end_dt, prod_warehouse, sales_df, purchases_df)
+        rolled_prod_warehouse = roll_back_prod_warehouse(end_dt, prod_warehouse, sales_df, purchases_df, product_master)
         rolled_mat_warehouse = roll_back_mat_warehouse(end_dt, mat_warehouse, sales_df, purchases_df, recipe_bom)
         
         # Build unit cost mapping for products
