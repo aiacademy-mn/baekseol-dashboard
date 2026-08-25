@@ -571,6 +571,8 @@ if check_password():
                         response = model.generate_content(prompt)
                         return response.text
                     except Exception as e:
+                        if "429" in str(e) or "quota" in str(e).lower():
+                            return "⚠️ **AI-ийн ачаалал хэтэрлээ:** Google Gemini API-ийн үнэгүй эрхийн хязгаар (Rate Limit) хэтэрсэн байна. Та 30 секунд хүлээгээд хуудсыг дахин ачаална үү (Refresh / Rerun)."
                         return f"AI-аар тайлан бэлтгэхэд алдаа гарлаа: {e}"
                 
                 with st.spinner("AI тайлан бэлтгэж байна..."):
@@ -817,7 +819,13 @@ if check_password():
                     st.dataframe(disp_exp_cat, use_container_width=True, hide_index=True)
                     
                 with st.expander("🔍 Бүх зарлагын дэлгэрэнгүй жагсаалт харах"):
-                    st.dataframe(detailed_exp[['Огноо', 'Үндсэн ангилал', 'Зарлагын нэр (Дэд ангилал)', 'Мөнгөн дүн', 'Хаанаас төлсөн / Касс', 'Тайлбар']], use_container_width=True, hide_index=True)
+                    detailed_exp = filtered_expenses.copy().sort_values(by="Огноо", ascending=False).head(50)
+                    if not detailed_exp.empty:
+                        detailed_exp['Огноо'] = detailed_exp['Огноо'].dt.strftime('%Y-%m-%d')
+                        detailed_exp['Мөнгөн дүн'] = detailed_exp['Мөнгөн дүн'].map('{:,.0f} ₮'.format)
+                        st.dataframe(detailed_exp[['Огноо', 'Үндсэн ангилал', 'Зарлагын нэр (Дэд ангилал)', 'Мөнгөн дүн', 'Хаанаас төлсөн / Касс', 'Тайлбар']], use_container_width=True, hide_index=True)
+                    else:
+                        st.info("Сонгосон хугацаанд зардлын мэдээлэл байхгүй байна.")
             else:
                 st.info("Сонгосон хугацаанд зардлын бүртгэл байхгүй байна.")
                 
@@ -922,6 +930,8 @@ if check_password():
                             response = model.generate_content(prompt)
                             return response.text
                         except Exception as e:
+                            if "429" in str(e) or "quota" in str(e).lower():
+                                return "⚠️ **AI-ийн ачаалал хэтэрлээ:** Google Gemini API-ийн үнэгүй эрхийн хязгаар (Rate Limit) хэтэрсэн байна. Та 30 секунд хүлээгээд хуудсыг дахин ачаална үү (Refresh / Rerun)."
                             return f"AI-аар зөвлөмж бэлтгэхэд алдаа гарлаа: {e}"
                             
                     with st.spinner("AI зөвлөх борлуулалтын стратеги, зардлын оновчлолыг тооцоолж байна..."):
