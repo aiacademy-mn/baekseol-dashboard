@@ -349,30 +349,41 @@ if check_password():
             total_prepayment_liability = payment_master['Үлдэгдэл'].sum() if not payment_master.empty else 0.0
             total_deferred_liabilities = total_course_liability + total_prepayment_liability
             
+            total_prepays_used_period = filtered_sales['hourly_prepay_used'].sum() + filtered_sales['course_prepay_used'].sum() if not filtered_sales.empty else 0.0
+            total_prepaid_sessions_period = int((filtered_sales['course_sessions_used'] > 0).sum() + (filtered_sales['hourly_prepay_used'] > 0).sum()) if not filtered_sales.empty else 0
+            
             st.markdown("### 🏦 Урьдчилгаа ба Багц Үйлчилгээний Өр төлбөр (Deferred Revenue)")
-            col_l1, col_l2, col_l3 = st.columns(3)
+            col_l1, col_l2, col_l3, col_l4 = st.columns(4)
             with col_l1:
                 st.markdown(f"""
                 <div class="metric-card">
-                    <div class="metric-label">⏳ Эргэн Төлөх Үлдэгдэл Курс (Байгууллагын Өр)</div>
+                    <div class="metric-label">⏳ Эргэн Төлөх Үлдэгдэл Курс</div>
                     <div class="metric-value" style="color: #E28743;">{total_course_liability:,.0f} ₮</div>
-                    <div style="font-size:12px; color:#666; margin-top:5px;">(Худалдаж авсан боловч ороогүй үлдсэн курсын дүн)</div>
+                    <div style="font-size:11px; color:#666; margin-top:5px;">(Худалдаж авсан боловч ороогүй үлдсэн курсын дүн)</div>
                 </div>
                 """, unsafe_allow_html=True)
             with col_l2:
                 st.markdown(f"""
                 <div class="metric-card">
-                    <div class="metric-label">💳 Урьдчилгаа Төлбөрийн Үлдэгдэл</div>
+                    <div class="metric-label">💳 Урьдчилгааны Үлдэгдэл</div>
                     <div class="metric-value" style="color: #E28743;">{total_prepayment_liability:,.0f} ₮</div>
-                    <div style="font-size:12px; color:#666; margin-top:5px;">(Цагийн болон бусад урьдчилж орсон ашиглаагүй дүн)</div>
+                    <div style="font-size:11px; color:#666; margin-top:5px;">(Ашиглаагүй байгаа урьдчилгааны дүн)</div>
                 </div>
                 """, unsafe_allow_html=True)
             with col_l3:
                 st.markdown(f"""
                 <div class="metric-card">
-                    <div class="metric-label">📊 Нийт Үйлчилгээ Хариуцах Өр (Total Liabilities)</div>
+                    <div class="metric-label">📊 Нийт Үйлчилгээний Өр</div>
                     <div class="metric-value" style="color: #C0392B; font-weight: bold;">{total_deferred_liabilities:,.0f} ₮</div>
-                    <div style="font-size:12px; color:#666; margin-top:5px;">(Байгууллагын нийт үзүүлэх өртэй үйлчилгээний дүн)</div>
+                    <div style="font-size:11px; color:#666; margin-top:5px;">(Байгууллагын нийт үзүүлэх өртэй үйлчилгээ)</div>
+                </div>
+                """, unsafe_allow_html=True)
+            with col_l4:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <div class="metric-label">📉 Сонгосон сард буурсан Өр</div>
+                    <div class="metric-value" style="color: #27AE60; font-weight: bold;">{total_prepays_used_period:,.0f} ₮</div>
+                    <div style="font-size:11px; color:#27AE60; margin-top:5px;">({total_prepaid_sessions_period} удаагийн багц ашиглалт)</div>
                 </div>
                 """, unsafe_allow_html=True)
             st.markdown("<br>", unsafe_allow_html=True)
@@ -437,6 +448,48 @@ if check_password():
             ]
             
             st.dataframe(disp_cf, use_container_width=True, hide_index=True)
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            # 1. Sales vs Payments Reconciliation Table
+            total_prepays_used_period = filtered_sales['hourly_prepay_used'].sum() + filtered_sales['course_prepay_used'].sum() if not filtered_sales.empty else 0.0
+            
+            st.markdown("### 🔄 Нийт Борлуулалт ба Төлбөрийн зөрүүний тохируулга (Reconciliation)")
+            st.markdown(f"""
+            Дашборд болон Google Sheet-ийн тоонуудын зөрүүг шалгах тооцоолол:
+            * **Нийт Борлуулалтын Орлого (Google Sheet Z багана):** `{total_cash_rev:,.0f} ₮` (Үзүүлсэн үйлчилгээ болон бүтээгдэхүүний нийлбэр дүн)
+            * (-) **Урьдчилгаанаас суутгасан дүн (Prepayments Used):** `{total_prepays_used_period:,.0f} ₮` (Өмнө нь мөнгөө төлсөн хэрэглэгчид энэ хугацаанд үйлчилгээ авсан хэсэг)
+            * (=) **Бодитоор шинээр орсон нийт төлбөр (Actual Payments Total):** `{total_cf_amt:,.0f} ₮` (Дээрх хүснэгтийн Нийт төлбөрүүдийн нийлбэр дүн)
+            
+            **Тайлбар:** Хэрэглэгчид урьдчилгаа мөнгөөрөө эсвэл курсын эрхээрээ үйлчилгээ авахад шинээр бэлэн мөнгө орж ирэхгүй тул *Төлбөрийн нийт дүн* нь *Борлуулалтын орлогоос* яг энэхүү урьдчилгааны дүнгээр зөрж харагддаг.
+            """)
+            
+            # 2. Account Cash Flows (Данс болон Кассын нэгтгэл)
+            inflow_company = 0.0
+            inflow_unda = 0.0
+            inflow_cash = 0.0
+            
+            for idx, row in filtered_sales.iterrows():
+                inflow_company += row['payments'].get("Данс — Компани", 0.0) + row['payments'].get("POS — Компани", 0.0) + row['payments'].get("QPay", 0.0)
+                inflow_unda += row['payments'].get("Данс — Ундармаа", 0.0) + row['payments'].get("POS — Ундармаа", 0.0)
+                inflow_cash += row['payments'].get("Бэлэн", 0.0)
+                
+            outflow_company = filtered_expenses[filtered_expenses['Хаанаас төлсөн / Касс'] == 'Компани данс']['Мөнгөн дүн'].sum() if not filtered_expenses.empty else 0.0
+            outflow_unda = filtered_expenses[filtered_expenses['Хаанаас төлсөн / Касс'] == 'Захирлын данс']['Мөнгөн дүн'].sum() if not filtered_expenses.empty else 0.0
+            outflow_cash = filtered_expenses[filtered_expenses['Хаанаас төлсөн / Касс'] == 'Касс бэлэн']['Мөнгөн дүн'].sum() if not filtered_expenses.empty else 0.0
+            
+            recon_data = [
+                {"Данс / Касс": "🏢 Компани данс (Данс + POS + QPay)", "Орлого (Inflow)": inflow_company, "Зарлага (Outflow)": outflow_company, "Цэвэр урсгал (Net)": inflow_company - outflow_company},
+                {"Данс / Касс": "👩 Ундармаа/Захирлын данс", "Орлого (Inflow)": inflow_unda, "Зарлага (Outflow)": outflow_unda, "Цэвэр урсгал (Net)": inflow_unda - outflow_unda},
+                {"Данс / Касс": "💵 Касс (Бэлэн мөнгө)", "Орлого (Inflow)": inflow_cash, "Зарлага (Outflow)": outflow_cash, "Цэвэр урсгал (Net)": inflow_cash - outflow_cash}
+            ]
+            
+            recon_df = pd.DataFrame(recon_data)
+            disp_recon = recon_df.copy()
+            for col in ["Орлого (Inflow)", "Зарлага (Outflow)", "Цэвэр урсгал (Net)"]:
+                disp_recon[col] = disp_recon[col].map('{:,.0f} ₮'.format)
+                
+            st.markdown("### 🏦 Данс болон Кассын Мөнгөн Урсгалын Нэгтгэл")
+            st.dataframe(disp_recon, use_container_width=True, hide_index=True)
             st.markdown("<br>", unsafe_allow_html=True)
             
             # AI or Static Summary Note

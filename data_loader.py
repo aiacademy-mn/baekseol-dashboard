@@ -210,6 +210,26 @@ def parse_daily_sales(excel_file, service_master, product_master):
                 except:
                     pass
 
+            try:
+                hourly_prepay_used = float(row.iloc[36]) if not pd.isna(row.iloc[36]) else 0.0
+            except:
+                hourly_prepay_used = 0.0
+                
+            try:
+                course_prepay_used = float(row.iloc[37]) if not pd.isna(row.iloc[37]) else 0.0
+            except:
+                course_prepay_used = 0.0
+                
+            try:
+                course_sessions_used = float(row.iloc[38]) if not pd.isna(row.iloc[38]) else 0.0
+            except:
+                course_sessions_used = 0.0
+                
+            try:
+                customer_debt = float(row.iloc[40]) if not pd.isna(row.iloc[40]) else 0.0
+            except:
+                customer_debt = 0.0
+
             parsed_records.append({
                 "date": pd.to_datetime(str(date_val).strip()),
                 "customer": customer_name,
@@ -223,7 +243,11 @@ def parse_daily_sales(excel_file, service_master, product_master):
                 "service_labor": service_labor if matched_service_name != "" else 0.0,
                 "service_material": service_material if matched_service_name != "" else 0.0,
                 "payments": payments,
-                "product_qtys": product_qtys
+                "product_qtys": product_qtys,
+                "hourly_prepay_used": hourly_prepay_used,
+                "course_prepay_used": course_prepay_used,
+                "course_sessions_used": course_sessions_used,
+                "customer_debt": customer_debt
             })
             
         sales_df = pd.DataFrame(parsed_records)
