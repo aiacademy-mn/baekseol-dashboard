@@ -1088,7 +1088,7 @@ if check_password():
     
     AI хариулт:
     """
-                                model = genai.GenerativeModel("gemini-1.5-flash")
+                                model = genai.GenerativeModel("gemini-3.6-flash")
                                 response = model.generate_content(full_prompt, stream=True)
                                 
                                 full_response = ""
@@ -1111,7 +1111,7 @@ if check_password():
                     @st.cache_data(ttl=1800)  # Cache for 30 minutes
                     def generate_marketing_strategy(data_summary_str):
                         try:
-                            model = genai.GenerativeModel("gemini-1.5-flash")
+                            model = genai.GenerativeModel("gemini-3.6-flash")
                             prompt = f"""
 Та гоо сайхны салоны бизнесийн стратеги хариуцсан AI Зөвлөх юм. Доор өгөгдсөн санхүү, борлуулалт, зардлын бодит өгөгдөлд дүн шинжилгээ хийж, удирдлагын хэмжээний зөвлөмж бэлтгэж өгнө үү.
 Ялангуяа:
@@ -1131,8 +1131,18 @@ if check_password():
                                 return "⚠️ **AI-ийн ачаалал хэтэрлээ:** Google Gemini API-ийн үнэгүй эрхийн хязгаар (Rate Limit) хэтэрсэн байна. Та 30 секунд хүлээгээд хуудсыг дахин ачаална үү (Refresh / Rerun)."
                             return f"AI-аар зөвлөмж бэлтгэхэд алдаа гарлаа: {e}"
                             
-                    with st.spinner("AI зөвлөх борлуулалтын стратеги, зардлын оновчлолыг тооцоолж байна..."):
-                        strategy_report = generate_marketing_strategy(get_current_data_summary())
-                    st.markdown(strategy_report)
+                    if "strategy_report" not in st.session_state:
+                        st.session_state.strategy_report = ""
+                        
+                    col_st1, col_st2 = st.columns([1, 2])
+                    with col_st1:
+                        if st.button("📈 Стратеги зөвлөмж шинээр бэлтгэх", use_container_width=True):
+                            with st.spinner("AI зөвлөх борлуулалтын стратеги, зардлын оновчлолыг тооцоолж байна..."):
+                                st.session_state.strategy_report = generate_marketing_strategy(get_current_data_summary())
+                                
+                    if st.session_state.strategy_report:
+                        st.markdown(st.session_state.strategy_report)
+                    else:
+                        st.info("Дээрх товчлуур дээр дарж AI маркетингийн стратеги болон зардлын зөвлөмжийг ажиллуулна уу. (Энэ нь API лимитийг хэмнэхэд тусална)")
     else:
         st.error("Google Sheets-ээс мэдээллийг татаж чадсангүй. Та сүлжээний холболтоо эсвэл Google Sheets-ийн холбоосыг шалгана уу.")
