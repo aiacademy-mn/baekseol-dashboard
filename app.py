@@ -772,18 +772,58 @@ if check_password():
             st.dataframe(disp_cf, use_container_width=True, hide_index=True)
             st.markdown("<br>", unsafe_allow_html=True)
             
-            # 1. Sales vs Payments Reconciliation Table
-            st.markdown("### 🔄 Нийт Борлуулалт ба Төлбөрийн зөрүүний тохируулга (Reconciliation)")
-            st.markdown(f"""
-            Дашборд болон Google Sheet-ийн тоонуудын зөрүүг шалгах тооцоолол:
-            * **Нийт Борлуулалтын Орлого (Google Sheet Z багана):** `{total_cash_rev:,.0f} ₮` (Үзүүлсэн үйлчилгээ болон бүтээгдэхүүний нийлбэр дүн)
-            * (-) **Урьдчилгаанаас хасагдсан дүн (Prepayments Used):** `{total_prepays_used_period:,.0f} ₮` (Өмнө нь мөнгөө төлсөн хэрэглэгчид үйлчилгээ авсан хэсэг)
-            * (+) **Урьдчилж орсон орлого (Prepayments Received):** `{new_prepays_received_period:,.0f} ₮` (Вэбээр шинээр төлсөн урьдчилгаа төлбөр)
-            * (-) **Бартер үйлчилгээний дүн (Barter):** `{barter_amt:,.0f} ₮` (Бартер нь бэлэн мөнгө болж ордоггүй тул хасна)
-            * (=) **ТӨЛБӨРИЙН НИЙТ (Actual Payments Total):** `{sheet_total_payments:,.0f} ₮` (Дээрх хүснэгтийн Нийт дүн)
+            # 1. Sales vs Payments Reconciliation Block (Downward step-by-step layout)
+            st.markdown("### 🔄 Борлуулалтаас Касс/Дансанд орсон мөнгөний тохируулга")
+            sales_plus_prepayment = total_cash_rev + new_prepays_received_period
             
-            **Тайлбар:** Хэрэглэгч урьдчилгаа мөнгөөр үйлчилгээ авахад бэлэн мөнгө орж ирэхгүй тул орлогоос хасагдана. Харин шинээр урьдчилж мөнгө төлөхөд үйлчилгээ үзүүлээгүй ч бэлэн мөнгө дансанд орж ирэх тул нэмэгдэнэ. Бартер нь бэлэн мөнгө биш тул хасагдаж тохируулагдана.
-            """)
+            st.markdown(f"""
+            <div style="background-color: #F8F9FA; padding: 15px; border-radius: 8px; border: 1px solid #E9ECEF; font-family: 'DM Sans', sans-serif; font-size: 14px;">
+                <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #DEE2E6; padding-bottom: 6px;">
+                    <span><b>1. Нийт Борлуулалт (Google Sheet Z багана):</b></span>
+                    <span><b>{total_cash_rev:,.0f} ₮</b></span>
+                </div>
+                <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #DEE2E6; padding: 6px 0; color: #27AE60;">
+                    <span>(+) Шинээр орсон урьдчилгаа (PAYMENT_MASTER):</span>
+                    <span>+{new_prepays_received_period:,.0f} ₮</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #ADB5BD; padding: 6px 0; font-weight: bold; color: #2C3E50;">
+                    <span>Нийт Орлого (Борлуулалт + Шинэ урьдчилгаа):</span>
+                    <span>{sales_plus_prepayment:,.0f} ₮</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #DEE2E6; padding: 6px 0; color: #C0392B;">
+                    <span>(-) Урьдчилгаанаас хасагдсан дүн (Ашигласан курс):</span>
+                    <span>-{total_prepays_used_period:,.0f} ₮</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #DEE2E6; padding: 6px 0; color: #C0392B;">
+                    <span>(-) Харилцагчийн өр (Хийлгээд мөнгөө өгөөгүй):</span>
+                    <span>-{total_customer_debt:,.0f} ₮</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #ADB5BD; padding: 6px 0; color: #C0392B;">
+                    <span>(-) Бартер үйлчилгээний дүн (Бэлэн бус):</span>
+                    <span>-{barter_amt:,.0f} ₮</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; padding-top: 8px; font-size: 16px; font-weight: bold; color: #2B8C7F;">
+                    <span>🔥 НИЙТ ОРСОН ОРЛОГО (Хүснэгтийн доод талын дүн):</span>
+                    <span>{sheet_total_payments:,.0f} ₮</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            # Show supplier credit debt
+            st.markdown("### 🔌 Бэлтгэн нийлүүлэгчийн Зээлийн Өр төлбөр (Accounts Payable)")
+            st.markdown(f"""
+            <div style="background-color: #FFF5F5; padding: 15px; border-radius: 8px; border: 1px solid #FFE3E3; font-family: 'DM Sans', sans-serif; font-size: 14px;">
+                <div style="display: flex; justify-content: space-between; font-weight: bold; color: #C0392B;">
+                    <span>🚨 Нийт Төлөгдөөгүй байгаа Барааны Зээл:</span>
+                    <span>{total_unpaid_debt:,.0f} ₮</span>
+                </div>
+                <div style="font-size: 12px; color: #7F8C8D; margin-top: 5px; font-family: 'DM Sans', sans-serif;">
+                    (БАРАА_БҮРТГЭЛ хуудсан дээр 'Орлого (Зээлээр авсан)' гэж тэмдэглэгдсэн бөгөөд 'Төлөгдөөгүй' төлөвтэй байгаа барааны нийлбэр дүн)
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
             
             # 2. Account Cash Flows (Данс болон Кассын нэгтгэл)
             inflow_company = 0.0
