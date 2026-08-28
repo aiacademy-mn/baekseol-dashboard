@@ -450,6 +450,30 @@ if check_password():
         
         cash_flow_net = sheet_total_payments - total_cash_expenses - total_commissions
         
+        # Calculate total outstanding supplier credit debt (Барааны зээлийн өр) from БАРАА_БҮРТГЭЛ
+        total_unpaid_debt = 0.0
+        if not purchases_df.empty:
+            status_col = None
+            for c in purchases_df.columns:
+                if any(x in str(c).lower() for x in ['төлөв', 'тайлбар', 'status', 'төлөв']):
+                    status_col = c
+                    break
+            cost_col = None
+            for c in purchases_df.columns:
+                if any(x in str(c).lower() for x in ['үнэ', 'дүн', 'өртөг', 'үнэ']):
+                    cost_col = c
+                    break
+            if cost_col is None and len(purchases_df.columns) > 5:
+                cost_col = purchases_df.columns[5]
+                
+            if status_col is not None and cost_col is not None:
+                unpaid_rows = purchases_df[
+                    purchases_df[status_col].astype(str).str.contains('Төлөгдөөгүй', case=False, na=False) |
+                    purchases_df[status_col].astype(str).str.contains('Зээл', case=False, na=False)
+                ]
+                for idx, row in unpaid_rows.iterrows():
+                    total_unpaid_debt += safe_float(row[cost_col])
+        
         # Calculate Cost Value of Course Liability
         service_cost_map = {}
         if not service_master.empty:
