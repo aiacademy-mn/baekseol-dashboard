@@ -114,11 +114,11 @@ if check_password():
             total_cost_val = 0.0
             
             for idx, c_row in course_master.iterrows():
-                cust_name = str(c_row['Нэр']).strip()
-                phone = str(c_row['Утас']).strip()
-                service = str(c_row['Үйлчилгээ']).strip()
-                curr_rem = float(c_row['Үлдсэн оролт']) if not pd.isna(c_row['Үлдсэн оролт']) else 0.0
-                unit_price = float(c_row['Нэгж оролтын үнэ']) if not pd.isna(c_row['Нэгж оролтын үнэ']) else 0.0
+                cust_name = str(c_row['Нэр']).strip() if 'Нэр' in c_row else ""
+                phone = str(c_row['Утас']).strip() if 'Утас' in c_row else ""
+                service = str(c_row['Үйлчилгээ']).strip() if 'Үйлчилгээ' in c_row else ""
+                curr_rem = safe_float(c_row['Үлдсэн оролт']) if 'Үлдсэн оролт' in c_row else 0.0
+                unit_price = safe_float(c_row['Нэгж оролтын үнэ']) if 'Нэгж оролтын үнэ' in c_row else 0.0
                 
                 used_after = 0.0
                 purchased_after_sessions = 0.0
