@@ -440,9 +440,13 @@ if check_password():
             barter_amt += row['payments'].get("Бартер", 0.0)
             
         total_prepays_used_period = filtered_sales['hourly_prepay_used'].sum() + filtered_sales['course_prepay_used'].sum() if not filtered_sales.empty else 0.0
+        total_customer_debt = filtered_sales['customer_debt'].sum() if not filtered_sales.empty else 0.0
         
-        # Calculate actual cash payments total (ТӨЛБӨРИЙН НИЙТ)
-        sheet_total_payments = total_cash_rev - total_prepays_used_period + new_prepays_received_period - barter_amt
+        # Calculate actual cash payments total (ТӨЛБӨРИЙН НИЙТ / НИЙТ ОРСОН ОРЛОГО)
+        sheet_total_payments = total_cash_rev - total_prepays_used_period + new_prepays_received_period - barter_amt - total_customer_debt
+        
+        # Cash-basis net profit matching Google Sheet's "ЦЭВЭР АШИГ" exactly
+        cash_profit = total_cash_rev - total_prepays_used_period - total_customer_debt - total_cash_expenses - total_commissions
         
         cash_flow_net = sheet_total_payments - total_cash_expenses - total_commissions
         
@@ -559,55 +563,110 @@ if check_password():
             st.markdown("<br>", unsafe_allow_html=True)
             
             st.subheader("🔥 Гол үзүүлэлтүүд (KPIs)")
+            report_basis = st.radio(
+                "📊 Тайлан харуулах суурь сонгох:",
+                ["Кассын сууриар (Google Sheet-тэй 100% тулгах горим)", "Аккруэл сууриар (Салоны бодит ашиг тооцох горим)"],
+                index=0,
+                horizontal=True
+            )
+            st.markdown("<br>", unsafe_allow_html=True)
+            
             col1, col2, col3, col4, col5 = st.columns(5)
             
-            with col1:
-                st.markdown(f"""
-                <div class="metric-card">
-                    <div class="metric-label">📈 Хэрэгжсэн Бодит Орлого</div>
-                    <div class="metric-value">{total_accrual_rev:,.0f} ₮</div>
-                    <div style="font-size:11px; color:green; margin-top:5px;">(Үзүүлсэн үйлчилгээ + бараа)</div>
-                </div>
-                """, unsafe_allow_html=True)
-                
-            with col2:
-                st.markdown(f"""
-                <div class="metric-card">
-                    <div class="metric-label">💸 Нийт Зарлага (Expenses)</div>
-                    <div class="metric-value" style="color: #C0392B;">{total_accrual_expenses:,.0f} ₮</div>
-                    <div style="font-size:11px; color:#666; margin-top:5px;">(Өртөг + Үйл ажиллагааны зардал)</div>
-                </div>
-                """, unsafe_allow_html=True)
-                
-            with col3:
-                color = "green" if accrual_net_profit >= 0 else "red"
-                st.markdown(f"""
-                <div class="metric-card">
-                    <div class="metric-label">📊 Хэрэгжсэн Бодит Цэвэр Ашиг</div>
-                    <div class="metric-value" style="color: {color}; font-weight: bold;">{accrual_net_profit:,.0f} ₮</div>
-                    <div style="font-size:11px; color:#666; margin-top:5px;">(Бодит Орлого - Нийт Зарлага)</div>
-                </div>
-                """, unsafe_allow_html=True)
-                
-            with col4:
-                st.markdown(f"""
-                <div class="metric-card">
-                    <div class="metric-label">💰 Бэлэн Мөнгөний Орлого</div>
-                    <div class="metric-value">{total_cash_rev:,.0f} ₮</div>
-                    <div style="font-size:11px; color:#666; margin-top:5px;">(Касс болон дансанд орсон дүн)</div>
-                </div>
-                """, unsafe_allow_html=True)
-                
-            with col5:
-                cf_color = "green" if cash_flow_net >= 0 else "red"
-                st.markdown(f"""
-                <div class="metric-card">
-                    <div class="metric-label">💵 Цэвэр Мөнгөн Урсгал</div>
-                    <div class="metric-value" style="color: {cf_color};">{cash_flow_net:,.0f} ₮</div>
-                    <div style="font-size:11px; color:#666; margin-top:5px;">(Орсон мөнгө - Зарлага - Шимтгэл)</div>
-                </div>
-                """, unsafe_allow_html=True)
-                
+            if report_basis == "Кассын сууриар (Google Sheet-тэй 100% тулгах горим)":
+                with col1:
+                    st.markdown(f"""
+                    <div class="metric-card">
+                        <div class="metric-label">💰 Нийт Борлуулалтын Орлого</div>
+                        <div class="metric-value">{total_cash_rev:,.0f} ₮</div>
+                        <div style="font-size:11px; color:#666; margin-top:5px;">(Google Sheet Z баганы нийлбэр)</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                with col2:
+                    st.markdown(f"""
+                    <div class="metric-card">
+                        <div class="metric-label">💸 Нийт Зарлага (Ledger)</div>
+                        <div class="metric-value" style="color: #C0392B;">{total_cash_expenses:,.0f} ₮</div>
+                        <div style="font-size:11px; color:#666; margin-top:5px;">(Зарлагын бүртгэлийн бодит гаралт)</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                with col3:
+                    color = "green" if cash_profit >= 0 else "red"
+                    st.markdown(f"""
+                    <div class="metric-card">
+                        <div class="metric-label">📈 Кассын Цэвэр Ашиг</div>
+                        <div class="metric-value" style="color: {color}; font-weight: bold;">{cash_profit:,.0f} ₮</div>
+                        <div style="font-size:11px; color:#666; margin-top:5px;">(Борлуулалт - Өр - Шимтгэл - Зардал)</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                with col4:
+                    st.markdown(f"""
+                    <div class="metric-card">
+                        <div class="metric-label">📥 Нийт Орсон Орлого</div>
+                        <div class="metric-value">{sheet_total_payments:,.0f} ₮</div>
+                        <div style="font-size:11px; color:#27AE60; margin-top:5px;">(Данс ба кассанд орсон бодит дүн)</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                with col5:
+                    cf_color = "green" if cash_flow_net >= 0 else "red"
+                    st.markdown(f"""
+                    <div class="metric-card">
+                        <div class="metric-label">💵 Цэвэр Мөнгөн Урсгал</div>
+                        <div class="metric-value" style="color: {cf_color};">{cash_flow_net:,.0f} ₮</div>
+                        <div style="font-size:11px; color:#666; margin-top:5px;">(Орсон мөнгө - Зарлага - Шимтгэл)</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+            else:
+                with col1:
+                    st.markdown(f"""
+                    <div class="metric-card">
+                        <div class="metric-label">📈 Хэрэгжсэн Бодит Орлого</div>
+                        <div class="metric-value">{total_accrual_rev:,.0f} ₮</div>
+                        <div style="font-size:11px; color:green; margin-top:5px;">(Үзүүлсэн үйлчилгээ + бараа)</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                with col2:
+                    st.markdown(f"""
+                    <div class="metric-card">
+                        <div class="metric-label">💸 Нийт Зарлага (Expenses)</div>
+                        <div class="metric-value" style="color: #C0392B;">{total_accrual_expenses:,.0f} ₮</div>
+                        <div style="font-size:11px; color:#666; margin-top:5px;">(Өртөг + Үйл ажиллагааны зардал)</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                with col3:
+                    color = "green" if accrual_net_profit >= 0 else "red"
+                    st.markdown(f"""
+                    <div class="metric-card">
+                        <div class="metric-label">📊 Хэрэгжсэн Бодит Цэвэр Ашиг</div>
+                        <div class="metric-value" style="color: {color}; font-weight: bold;">{accrual_net_profit:,.0f} ₮</div>
+                        <div style="font-size:11px; color:#666; margin-top:5px;">(Бодит Орлого - Нийт Зарлага)</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                with col4:
+                    st.markdown(f"""
+                    <div class="metric-card">
+                        <div class="metric-label">💰 Бэлэн Мөнгөний Орлого</div>
+                        <div class="metric-value">{total_cash_rev:,.0f} ₮</div>
+                        <div style="font-size:11px; color:#666; margin-top:5px;">(Касс болон дансанд орсон дүн)</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                with col5:
+                    cf_color = "green" if cash_flow_net >= 0 else "red"
+                    st.markdown(f"""
+                    <div class="metric-card">
+                        <div class="metric-label">💵 Цэвэр Мөнгөн Урсгал</div>
+                        <div class="metric-value" style="color: {cf_color};">{cash_flow_net:,.0f} ₮</div>
+                        <div style="font-size:11px; color:#666; margin-top:5px;">(Орсон мөнгө - Зарлага - Шимтгэл)</div>
+                    </div>
+                    """, unsafe_allow_html=True)
             st.markdown("<br>", unsafe_allow_html=True)
             
             # Calculate Liabilities rolled back to end_dt!
