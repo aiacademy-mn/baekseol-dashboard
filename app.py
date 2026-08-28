@@ -555,7 +555,7 @@ if check_password():
             st.markdown("### 🎯 Борлуулалтын зорилтот KPIs (Төлөвлөгөө ба Биелэлт)")
             
             # Actual values for targets
-            act_total_rev = total_cash_rev
+            act_total_rev = total_cash_rev + new_prepays_received_period
             act_service_rev = filtered_sales['service_cash'].sum() if not filtered_sales.empty else 0.0
             act_product_rev = filtered_sales['product_cash'].sum() if not filtered_sales.empty else 0.0
             
@@ -601,9 +601,9 @@ if check_password():
                 with col1:
                     st.markdown(f"""
                     <div class="metric-card">
-                        <div class="metric-label">💰 Нийт Борлуулалтын Орлого</div>
-                        <div class="metric-value">{total_cash_rev:,.0f} ₮</div>
-                        <div style="font-size:11px; color:#666; margin-top:5px;">(Google Sheet Z баганы нийлбэр)</div>
+                        <div class="metric-label">💰 Нийт Кассын Орлого</div>
+                        <div class="metric-value">{(total_cash_rev + new_prepays_received_period):,.0f} ₮</div>
+                        <div style="font-size:11px; color:#666; margin-top:5px;">(Борлуулалт + Шинэ урьдчилгаа)</div>
                     </div>
                     """, unsafe_allow_html=True)
                     
@@ -761,7 +761,9 @@ if check_password():
             for pay_type, rate in commission_rates.items():
                 # support both formats of key lookup
                 alt_pay_type = pay_type.replace("—", "-")
-                amt = payment_sums.get(pay_type, 0.0) + payment_sums.get(alt_pay_type, 0.0)
+                amt = payment_sums.get(pay_type, 0.0)
+                if alt_pay_type != pay_type:
+                    amt += payment_sums.get(alt_pay_type, 0.0)
                 comm = amt * rate
                 net = amt - comm
                 
@@ -796,131 +798,6 @@ if check_password():
             st.dataframe(disp_cf, use_container_width=True, hide_index=True)
             st.markdown("<br>", unsafe_allow_html=True)
             
-            # 1. Sales vs Payments Reconciliation Block (Downward step-by-step layout)
-            st.markdown("### 🔄 Борлуулалтаас Касс/Дансанд орсон мөнгөний тохируулга")
-            sales_plus_prepayment = total_cash_rev + new_prepays_received_period
-            
-            st.markdown(f"""
-            <div style="background-color: #F8F9FA; padding: 15px; border-radius: 8px; border: 1px solid #E9ECEF; font-family: 'DM Sans', sans-serif; font-size: 14px;">
-                <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #DEE2E6; padding-bottom: 6px;">
-                    <span><b>1. Нийт Борлуулалт (Google Sheet Z багана):</b></span>
-                    <span><b>{total_cash_rev:,.0f} ₮</b></span>
-                </div>
-                <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #DEE2E6; padding: 6px 0; color: #27AE60;">
-                    <span>(+) Шинээр орсон урьдчилгаа (PAYMENT_MASTER):</span>
-                    <span>+{new_prepays_received_period:,.0f} ₮</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #ADB5BD; padding: 6px 0; font-weight: bold; color: #2C3E50;">
-                    <span>Нийт Орлого (Борлуулалт + Шинэ урьдчилгаа):</span>
-                    <span>{sales_plus_prepayment:,.0f} ₮</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #DEE2E6; padding: 6px 0; color: #C0392B;">
-                    <span>(-) Урьдчилгаанаас хасагдсан дүн (Ашигласан курс):</span>
-                    <span>-{total_prepays_used_period:,.0f} ₮</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #DEE2E6; padding: 6px 0; color: #C0392B;">
-                    <span>(-) Харилцагчийн өр (Хийлгээд мөнгөө өгөөгүй):</span>
-                    <span>-{total_customer_debt:,.0f} ₮</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #ADB5BD; padding: 6px 0; color: #C0392B;">
-                    <span>(-) Бартер үйлчилгээний дүн (Бэлэн бус):</span>
-                    <span>-{barter_amt:,.0f} ₮</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; padding-top: 8px; font-size: 16px; font-weight: bold; color: #2B8C7F;">
-                    <span>🔥 НИЙТ ОРСОН ОРЛОГО (Хүснэгтийн доод талын дүн):</span>
-                    <span>{sheet_total_payments:,.0f} ₮</span>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            st.markdown("<br>", unsafe_allow_html=True)
-            
-            # Show supplier credit debt
-            st.markdown("### 🔌 Бэлтгэн нийлүүлэгчийн Зээлийн Өр төлбөр (Accounts Payable)")
-            st.markdown(f"""
-            <div style="background-color: #FFF5F5; padding: 15px; border-radius: 8px; border: 1px solid #FFE3E3; font-family: 'DM Sans', sans-serif; font-size: 14px;">
-                <div style="display: flex; justify-content: space-between; font-weight: bold; color: #C0392B;">
-                    <span>🚨 Нийт Төлөгдөөгүй байгаа Барааны Зээл:</span>
-                    <span>{total_unpaid_debt:,.0f} ₮</span>
-                </div>
-                <div style="font-size: 12px; color: #7F8C8D; margin-top: 5px; font-family: 'DM Sans', sans-serif;">
-                    (БАРАА_БҮРТГЭЛ хуудсан дээр 'Орлого (Зээлээр авсан)' гэж тэмдэглэгдсэн бөгөөд 'Төлөгдөөгүй' төлөвтэй байгаа барааны нийлбэр дүн)
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # 2. Account Cash Flows (Данс болон Кассын нэгтгэл)
-            inflow_company = 0.0
-            inflow_unda = 0.0
-            inflow_cash = 0.0
-            
-            for idx, row in filtered_sales.iterrows():
-                inflow_company += row['payments'].get("Данс — Компани", 0.0) + row['payments'].get("Данс - Компани", 0.0) + row['payments'].get("POS — Компани", 0.0) + row['payments'].get("POS - Компани", 0.0) + row['payments'].get("QPay", 0.0)
-                inflow_unda += row['payments'].get("Данс — Ундармаа", 0.0) + row['payments'].get("Данс - Ундармаа", 0.0) + row['payments'].get("POS — Ундармаа", 0.0) + row['payments'].get("POS - Ундармаа", 0.0)
-                inflow_cash += row['payments'].get("Бэлэн", 0.0)
-                
-            # Add prepayment received to company account
-            inflow_company += new_prepays_received_period
-            
-            outflow_company = filtered_expenses[filtered_expenses['Хаанаас төлсөн / Касс'] == 'Компани данс']['Мөнгөн дүн'].sum() if not filtered_expenses.empty else 0.0
-            outflow_unda = filtered_expenses[filtered_expenses['Хаанаас төлсөн / Касс'] == 'Захирлын данс']['Мөнгөн дүн'].sum() if not filtered_expenses.empty else 0.0
-            outflow_cash = filtered_expenses[filtered_expenses['Хаанаас төлсөн / Касс'] == 'Касс бэлэн']['Мөнгөн дүн'].sum() if not filtered_expenses.empty else 0.0
-            
-            recon_data = [
-                {"Данс / Касс": "🏢 Компани данс (Данс + POS + QPay + Урьдчилгаа)", "Орлого (Inflow)": inflow_company, "Зарлага (Outflow)": outflow_company, "Цэвэр урсгал (Net)": inflow_company - outflow_company},
-                {"Данс / Касс": "👩 Ундармаа/Захирлын данс", "Орлого (Inflow)": inflow_unda, "Зарлага (Outflow)": outflow_unda, "Цэвэр урсгал (Net)": inflow_unda - outflow_unda},
-                {"Данс / Касс": "💵 Касс (Бэлэн мөнгө)", "Орлого (Inflow)": inflow_cash, "Зарлага (Outflow)": outflow_cash, "Цэвэр урсгал (Net)": inflow_cash - outflow_cash}
-            ]
-            
-            recon_df = pd.DataFrame(recon_data)
-            disp_recon = recon_df.copy()
-            for col in ["Орлого (Inflow)", "Зарлага (Outflow)", "Цэвэр урсгал (Net)"]:
-                disp_recon[col] = disp_recon[col].map('{:,.0f} ₮'.format)
-                
-            st.markdown("### 🏦 Данс болон Кассын Мөнгөн Урсгалын Нэгтгэл")
-            st.dataframe(disp_recon, use_container_width=True, hide_index=True)
-            st.markdown("<br>", unsafe_allow_html=True)
-            
-            # AI or Static Summary Note
-            st.markdown("### 📝 Санхүүгийн дүн шинжилгээ ба тайлбар")
-            
-            if has_ai:
-                @st.cache_data(ttl=3600)  # Cache for 1 hour to save API calls
-                def generate_ai_analysis(data_summary_str):
-                    try:
-                        model = genai.GenerativeModel("gemini-3.6-flash")
-                        prompt = f"""
-Та Baekseol Beauty гоо сайхны салоны AI Санхүүгийн шинжээч юм. Доор өгөгдсөн санхүүгийн өгөгдлийг ашиглан удирдлагын тайланг бэлтгэж, тоонууд хэрхэн бодогдсон логикийг маш ойлгомжтойгоор тайлбарлаж өгнө үү.
-Ялангуяа:
-1. Хэрэгжсэн бодит орлого болон Бэлэн мөнгөний орлого хоёрын зөрүүг тоо бодож, хэрэглэгчид жишээгээр тайлбарлаж өгөх (Жишээлбэл, курс худалдан авалт болон курс ашиглалт хэрхэн нөлөөлсөн).
-2. Хэрэгжсэн бодит цэвэр ашиг болон Цэвэр мөнгөн урсгал хоёрын зөрүүг тайлбарлах.
-3. Хамгийн ашигтай үйлчилгээ болон бүтээгдэхүүнийг зааж өгөх.
-4. Зардлын гол ангиллыг харуулах.
-
-Өгөгдөл:
-{data_summary_str}
-
-Хариултыг зөвхөн Монгол хэлээр, маш цэгцтэй, Markdown форматтайгаар бэлтгэнэ үү.
-"""
-                        response = model.generate_content(prompt)
-                        return response.text
-                    except Exception as e:
-                        if "429" in str(e) or "quota" in str(e).lower():
-                            return "⚠️ **AI-ийн ачаалал хэтэрлээ:** Google Gemini API-ийн үнэгүй эрхийн хязгаар (Rate Limit) хэтэрсэн байна. Та 30 секунд хүлээгээд хуудсыг дахин ачаална үү (Refresh / Rerun)."
-                        return f"AI-аар тайлан бэлтгэхэд алдаа гарлаа: {e}"
-                
-                with st.spinner("AI тайлан бэлтгэж байна..."):
-                    ai_analysis_text = generate_ai_analysis(get_current_data_summary())
-                st.markdown(ai_analysis_text)
-            else:
-                st.info("💡 **Зөвлөмж:** Зүүн талын цэсэнд **Gemini API Key**-ээ оруулбал өдөр бүрийн санхүүгийн дүн шинжилгээний тайлбар болон тооцооллын задргааг AI автоматаар бодож энд харуулах болно.")
-                st.markdown("""
-                #### 💡 Бодит ашиг ба Бэлэн мөнгөний зөрүүг хэрхэн боддог вэ?
-                * **Курсийн урьдчилгаа төлбөр:** Үйлчлүүлэгч 500,000₮-ийн курс авахад тухайн өдрийн **Бэлэн мөнгөний орлого 500,000₮**-өөр нэмэгдэх ч **Хэрэгжсэн бодит орлогод зөвхөн 1 удаагийн үйлчилгээний үнэ (100,000₮)** очно. Үлдэх 400,000₮ нь дараагийн удаа үйлчилгээ авахад хэрэгжинэ.
-                * **Курс ашиглалт:** Үйлчлүүлэгч курсээсээ 1 удаа ашиглахад **Бэлэн мөнгөний орлого 0₮** байх ч үйлчилгээ үзүүлсэн тул дашборд дээр **Хэрэгжсэн орлого нь 100,000₮** гэж бүртгэгдэнэ. Түүнээс гоо сайханчийн хөлс ба материалын өртөг хасагдан бодит ашгийг зөв тооцдог.
-                * **Бараа татан авалт:** Агуулахад зориулж 10,000,000₮-ний бараа татахад **Бэлэн мөнгөний урсгалаас 10 сая хасагдах** боловч бодит ашгаас хасахгүй. Бараа зарагдах эсвэл үйлчилгээнд ашиглагдах бүрд л өөрийн өртөг нь бодит ашгаас хасагдаж бодогдоно.
-                """)
-                
             st.markdown("<br>", unsafe_allow_html=True)
             
             # Graphs
