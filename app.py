@@ -7,6 +7,18 @@ import data_loader
 import google.generativeai as genai
 import os
 
+def safe_float(val, default=0.0):
+    if pd.isna(val):
+        return default
+    s_val = str(val).strip()
+    if s_val == "" or s_val == "-" or s_val == "nan" or s_val == "None":
+        return default
+    clean_val = s_val.replace('₮', '').replace(',', '').replace(' ', '').replace('\xa0', '')
+    try:
+        return float(clean_val)
+    except ValueError:
+        return default
+
 # Page config
 st.set_page_config(
     page_title="Baekseol Beauty Dashboard",
@@ -152,7 +164,7 @@ if check_password():
             if not product_master.empty:
                 for idx, row in product_master.iterrows():
                     name_clean = str(row['Материалын нэр_clean']).strip() if 'Материалын нэр_clean' in row else str(row['Материалын нэр']).strip()
-                    cost_map[name_clean] = float(row['Худалдан авсан үнэ']) if not pd.isna(row['Худалдан авсан үнэ']) else 0.0
+                    cost_map[name_clean] = safe_float(row['Худалдан авсан үнэ'])
                     
             pw = prod_warehouse.copy()
             sales_after = sales_df[sales_df['date'] > end_dt] if not sales_df.empty else pd.DataFrame()
@@ -166,15 +178,16 @@ if check_password():
                         
             purchases_sums = {}
             if not purchases_after.empty:
-                for idx, row in purchases_after.iterrows():
+                purchases_only = purchases_after[purchases_after['Төрөл'].str.contains('Орлого', na=False)]
+                for idx, row in purchases_only.iterrows():
                     p_name = str(row['Материалын нэр']).strip()
-                    qty = float(row['Тоо хэмжээ']) if not pd.isna(row['Тоо хэмжээ']) else 0.0
+                    qty = safe_float(row['Тоо хэмжээ'])
                     purchases_sums[p_name] = purchases_sums.get(p_name, 0.0) + qty
                     
             recalc_rows = []
             for idx, row in pw.iterrows():
                 name = str(row['Материалын нэр']).strip()
-                curr_stock = float(row['Одоогийн үлдэгдэл']) if not pd.isna(row['Одоогийн үлдэгдэл']) else 0.0
+                curr_stock = safe_float(row['Одоогийн үлдэгдэл'])
                 
                 unit_cost = cost_map.get(name, 0.0)
                 if unit_cost == 0.0:
@@ -183,7 +196,7 @@ if check_password():
                             unit_cost = v
                             break
                 if unit_cost == 0.0:
-                    tot_val = float(row['Нийт хөрөнгийн дүн']) if not pd.isna(row['Нийт хөрөнгийн дүн']) else 0.0
+                    tot_val = safe_float(row['Нийт хөрөнгийн дүн'])
                     if curr_stock > 0:
                         unit_cost = tot_val / curr_stock
                 
@@ -228,20 +241,21 @@ if check_password():
                                     break
                         for r_idx, r_row in recipe.iterrows():
                             m_name = str(r_row['Материалын нэр']).strip()
-                            qty = float(r_row['Орц хэмжээ']) if not pd.isna(r_row['Орц хэмжээ']) else 0.0
+                            qty = safe_float(r_row['Орц хэмжээ'])
                             mat_used_sums[m_name] = mat_used_sums.get(m_name, 0.0) + qty
                             
             mat_bought_sums = {}
             if not purchases_after.empty:
-                for idx, row in purchases_after.iterrows():
+                purchases_only = purchases_after[purchases_after['Төрөл'].str.contains('Орлого', na=False)]
+                for idx, row in purchases_only.iterrows():
                     name = str(row['Материалын нэр']).strip()
-                    qty = float(row['Тоо хэмжээ']) if not pd.isna(row['Тоо хэмжээ']) else 0.0
+                    qty = safe_float(row['Тоо хэмжээ'])
                     mat_bought_sums[name] = mat_bought_sums.get(name, 0.0) + qty
                     
             recalc_rows = []
             for idx, row in mw.iterrows():
                 name = str(row['Материалын нэр']).strip()
-                curr_stock = float(row['Одоогийн үлдэгдэл']) if not pd.isna(row['Одоогийн үлдэгдэл']) else 0.0
+                curr_stock = safe_float(row['Одоогийн үлдэгдэл'])
                 
                 used_after = mat_used_sums.get(name, 0.0)
                 if used_after == 0.0:
@@ -345,7 +359,7 @@ if check_password():
         product_cost_map = {}
         for idx, row in product_master.iterrows():
             name = row['Материалын нэр_clean']
-            product_cost_map[name] = float(row['Худалдан авсан үнэ']) if not pd.isna(row['Худалдан авсан үнэ']) else 0.0
+            product_cost_map[name] = safe_float(row['Худалдан авсан үнэ'])
 
         # Title Block
         st.markdown(f"<h1 class='main-title'>💅 BAEKSEOL BEAUTY Дашборд</h1>", unsafe_allow_html=True)
