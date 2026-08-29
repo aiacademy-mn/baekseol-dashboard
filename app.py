@@ -605,9 +605,9 @@ if check_password():
                 with col1:
                     st.markdown(f"""
                     <div class="metric-card">
-                        <div class="metric-label">💰 Нийт Кассын Орлого</div>
-                        <div class="metric-value">{(total_cash_rev + new_prepays_received_period):,.0f} ₮</div>
-                        <div style="font-size:11px; color:#666; margin-top:5px;">(Борлуулалт + Шинэ урьдчилгаа)</div>
+                        <div class="metric-label">💰 Нийт Борлуулалтын Орлого</div>
+                        <div class="metric-value">{total_cash_rev:,.0f} ₮</div>
+                        <div style="font-size:11px; color:#666; margin-top:5px;">(Google Sheet B5 нүдний дүн)</div>
                     </div>
                     """, unsafe_allow_html=True)
                     
