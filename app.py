@@ -407,11 +407,15 @@ if check_password():
                 total_product_cogs += qty * unit_cost
                 
         # 4. Operating Expenses (OpEx)
-        # We keep the "Цалин" category from the ledger (ЗАРЛАГЫН_БҮРТГЭЛ) to match actual paid wages,
-        # but exclude "Бараа материал" to prevent double counting with product COGS.
-        operating_expenses_df = filtered_expenses[filtered_expenses['Үндсэн ангилал'] != 'Бараа материал']
+        # Exclude "Бараа материал" to prevent double counting with product COGS,
+        # and exclude "Дотоод шилжүүлэг" / "Дотоод гүйлгээ" to ignore cash-to-bank or account transfers.
+        operating_expenses_df = filtered_expenses[
+            ~filtered_expenses['Үндсэн ангилал'].isin(['Бараа материал', 'Дотоод шилжүүлэг', 'Дотоод гүйлгээ'])
+        ]
         total_opex = operating_expenses_df['Мөнгөн дүн'].sum()
-        total_cash_expenses = filtered_expenses['Мөнгөн дүн'].sum()
+        total_cash_expenses = filtered_expenses[
+            ~filtered_expenses['Үндсэн ангилал'].isin(['Дотоод шилжүүлэг', 'Дотоод гүйлгээ'])
+        ]['Мөнгөн дүн'].sum()
         
         # Calculate Total Accrual Expenses:
         # Salaries in total_opex (from ЗАРЛАГЫН_БҮРТГЭЛ) already include base and bonus commissions.
@@ -629,9 +633,9 @@ if check_password():
                 with col4:
                     st.markdown(f"""
                     <div class="metric-card">
-                        <div class="metric-label">📥 Нийт Орсон Орлого</div>
+                        <div class="metric-label">📥 Нийт Цэвэр Орлого</div>
                         <div class="metric-value">{sheet_total_payments:,.0f} ₮</div>
-                        <div style="font-size:11px; color:#27AE60; margin-top:5px;">(Данс ба кассанд орсон бодит дүн)</div>
+                        <div style="font-size:11px; color:#27AE60; margin-top:5px;">(Бартер хасагдсан цэвэр дүн)</div>
                     </div>
                     """, unsafe_allow_html=True)
                     
@@ -797,6 +801,103 @@ if check_password():
             
             st.dataframe(disp_cf, use_container_width=True, hide_index=True)
             st.markdown("<br>", unsafe_allow_html=True)
+            
+            # 1. Bank Transfer Helper Block
+            st.markdown("### 🏦 Дансны шилжүүлгийн тооцоолуур")
+            
+            tot_service_cash = filtered_sales['service_cash'].sum() if not filtered_sales.empty else 0.0
+            tot_product_cash = filtered_sales['product_cash'].sum() if not filtered_sales.empty else 0.0
+            tot_cash_sales = 0.0
+            if not filtered_sales.empty:
+                for idx, row in filtered_sales.iterrows():
+                    tot_cash_sales += row['payments'].get("Бэлэн", 0.0)
+                    
+            col_b1, col_b2, col_b3 = st.columns(3)
+            with col_b1:
+                st.markdown(f"""
+                <div class="metric-card" style="border-left: 5px solid #27AE60;">
+                    <div class="metric-label">💵 Компани данс руу тушаах бэлэн мөнгө</div>
+                    <div class="metric-value" style="color: #27AE60; font-size: 20px;">{tot_cash_sales:,.0f} ₮</div>
+                    <div style="font-size:11px; color:#666; margin-top:5px;">(Кассаас MN92 0005 00 5175343431 руу тушаах)</div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+            with col_b2:
+                st.markdown(f"""
+                <div class="metric-card" style="border-left: 5px solid #2980B9;">
+                    <div class="metric-label">💇 Үйлчилгээний данс руу шилжүүлэх</div>
+                    <div class="metric-value" style="color: #2980B9; font-size: 20px;">{tot_service_cash:,.0f} ₮</div>
+                    <div style="font-size:11px; color:#666; margin-top:5px;">(Үндсэн данснаас MN66 0005 00 5079172279 руу)</div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+            with col_b3:
+                st.markdown(f"""
+                <div class="metric-card" style="border-left: 5px solid #8E44AD;">
+                    <div class="metric-label">📦 Бүтээгдэхүүний данс руу шилжүүлэх</div>
+                    <div class="metric-value" style="color: #8E44AD; font-size: 20px;">{tot_product_cash:,.0f} ₮</div>
+                    <div style="font-size:11px; color:#666; margin-top:5px;">(Үндсэн данснаас MN46 0005 00 5175433596 руу)</div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            # 2. Sales vs Payments Reconciliation Block (Downward step-by-step layout)
+            st.markdown("### 🔄 Борлуулалтаас Касс/Дансанд орсон мөнгөний тохируулга")
+            sales_plus_prepayment = total_cash_rev + new_prepays_received_period
+            
+            st.markdown(f"""
+            <div style="background-color: #F8F9FA; padding: 15px; border-radius: 8px; border: 1px solid #E9ECEF; font-family: 'DM Sans', sans-serif; font-size: 14px;">
+                <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #DEE2E6; padding-bottom: 6px;">
+                    <span><b>1. Нийт Борлуулалт (Google Sheet Z багана):</b></span>
+                    <span><b>{total_cash_rev:,.0f} ₮</b></span>
+                </div>
+                <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #DEE2E6; padding: 6px 0; color: #27AE60;">
+                    <span>(+) Шинээр орсон урьдчилгаа (PAYMENT_MASTER):</span>
+                    <span>+{new_prepays_received_period:,.0f} ₮</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #DEE2E6; padding: 6px 0; font-weight: bold; color: #2C3E50;">
+                    <span>Нийт Орлого (Борлуулалт + Шинэ урьдчилгаа):</span>
+                    <span>{sales_plus_prepayment:,.0f} ₮</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #DEE2E6; padding: 6px 0; color: #C0392B;">
+                    <span>(-) Урьдчилгаанаас хасагдсан дүн (Ашигласан курс):</span>
+                    <span>-{total_prepays_used_period:,.0f} ₮</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #ADB5BD; padding: 6px 0; color: #C0392B;">
+                    <span>(-) Харилцагчийн өр (Хийлгээд мөнгөө өгөөгүй):</span>
+                    <span>-{total_customer_debt:,.0f} ₮</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #34495E; padding: 8px 0; font-size: 15px; font-weight: bold; color: #27AE60;">
+                    <span>🔥 НИЙТ ОРСОН ОРЛОГО (Бүх төлбөрийн хэлбэрүүд):</span>
+                    <span>{(sheet_total_payments + barter_amt):,.0f} ₮</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #ADB5BD; padding: 6px 0; color: #C0392B;">
+                    <span>(-) Хасах орлого бартер:</span>
+                    <span>-{barter_amt:,.0f} ₮</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; padding-top: 8px; font-size: 16px; font-weight: bold; color: #2E86C1;">
+                    <span>💎 НИЙТ ЦЭВЭР ОРЛОГО (Бодит бэлэн мөнгөн орлого):</span>
+                    <span>{sheet_total_payments:,.0f} ₮</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            # Show supplier credit debt
+            st.markdown("### 🔌 Бэлтгэн нийлүүлэгчийн Зээлийн Өр төлбөр (Accounts Payable)")
+            st.markdown(f"""
+            <div style="background-color: #FFF5F5; padding: 15px; border-radius: 8px; border: 1px solid #FFE3E3; font-family: 'DM Sans', sans-serif; font-size: 14px;">
+                <div style="display: flex; justify-content: space-between; font-weight: bold; color: #C0392B;">
+                    <span>🚨 Нийт Төлөгдөөгүй байгаа Барааны Зээл:</span>
+                    <span>{total_unpaid_debt:,.0f} ₮</span>
+                </div>
+                <div style="font-size: 12px; color: #7F8C8D; margin-top: 5px; font-family: 'DM Sans', sans-serif;">
+                    (БАРАА_БҮРТГЭЛ хуудсан дээр 'Орлого (Зээлээр авсан)' гэж тэмдэглэгдсэн бөгөөд 'Төлөгдөөгүй' төлөвтэй байгаа барааны нийлбэр дүн)
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
             
             st.markdown("<br>", unsafe_allow_html=True)
             
