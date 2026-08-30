@@ -1179,6 +1179,42 @@ if check_password():
         with tab_inventory:
             st.subheader("🏢 Агуулахын одоогийн үлдэгдлийн хяналт")
             
+            # Inventory Valuation Calculation
+            total_inventory_cost = 0.0
+            total_inventory_selling = 0.0
+            if not rolled_prod_warehouse.empty:
+                for idx, row in rolled_prod_warehouse.iterrows():
+                    qty = safe_float(row['Одоогийн үлдэгдэл'])
+                    name = str(row['Материалын нэр']).strip()
+                    cost = product_cost_map.get(name, 0.0)
+                    price = product_price_map.get(name, 0.0)
+                    if cost == 0.0:
+                        cost = safe_float(row['Нийт хөрөнгийн дүн']) / qty if qty > 0 else 0.0
+                    total_inventory_cost += qty * cost
+                    total_inventory_selling += qty * price
+            
+            potential_profit = total_inventory_selling - total_inventory_cost
+            
+            st.markdown(f"""
+            <div style="background-color: #FCF3CF; padding: 15px; border-radius: 8px; border: 1px solid #F4D03F; margin-bottom: 20px; font-family: 'DM Sans', sans-serif;">
+                <div style="font-weight: bold; color: #B7950B; font-size: 15px;">📦 Агуулахын хөрөнгийн үнэлгээ (Inventory Valuation)</div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-top: 10px;">
+                    <div>
+                        <div style="font-size: 12px; color: #7F8C8D;">Агуулахын өртөг үнэ (Хөрөнгө оруулалт):</div>
+                        <div style="font-size: 19px; font-weight: bold; color: #7D6608;">{total_inventory_cost:,.0f} ₮</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 12px; color: #7F8C8D;">Борлуулах боломжит нийт үнэ:</div>
+                        <div style="font-size: 19px; font-weight: bold; color: #1F618D;">{total_inventory_selling:,.0f} ₮</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 12px; color: #7F8C8D;">Бүгд зарагдвал олох цэвэр ашиг:</div>
+                        <div style="font-size: 19px; font-weight: bold; color: #196F3D;">{potential_profit:,.0f} ₮</div>
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
             col_inv1, col_inv2 = st.columns(2)
             
             with col_inv1:
