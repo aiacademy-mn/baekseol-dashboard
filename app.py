@@ -1100,18 +1100,19 @@ if check_password():
                     
                 prod_details_df = pd.DataFrame(prod_details).sort_values(by="Зарагдсан тоо", ascending=False)
                 
-                # Average Product Profit Calculation & Display
-                total_products_sold = prod_details_df['Зарагдсан тоо'].sum() if not prod_details_df.empty else 0
-                total_product_profit = prod_details_df['Цэвэр ашиг'].sum() if not prod_details_df.empty else 0.0
-                avg_product_profit = total_product_profit / total_products_sold if total_products_sold > 0 else 0.0
-                avg_product_margin = (total_product_profit / prod_details_df['Нийт Борлуулалт'].sum() * 100) if not prod_details_df.empty and prod_details_df['Нийт Борлуулалт'].sum() > 0 else 0.0
+                # Average Product Profit Calculation & Display (including discounts)
+                total_product_discount = filtered_sales['product_discount'].sum() if not filtered_sales.empty and 'product_discount' in filtered_sales.columns else 0.0
+                total_product_revenue = prod_details_df['Нийт Борлуулалт'].sum() if not prod_details_df.empty else 0.0
+                total_product_net_profit = total_product_profit - total_product_discount
+                avg_product_profit_net = total_product_net_profit / total_products_sold if total_products_sold > 0 else 0.0
+                avg_product_margin_net = (total_product_net_profit / total_product_revenue * 100) if total_product_revenue > 0 else 0.0
                 
                 st.markdown(f"""
                 <div style="background-color: #EBF5FB; padding: 15px; border-radius: 8px; border: 1px solid #AED6F1; margin-bottom: 20px; font-family: 'DM Sans', sans-serif;">
-                    <div style="font-weight: bold; color: #2980B9; font-size: 15px;">📦 Бүтээгдэхүүний дундаж ашиг (Average Product Profit)</div>
-                    <div style="font-size: 26px; font-weight: bold; margin-top: 5px; color: #1B4F72;">{avg_product_profit:,.0f} ₮ <span style="font-size: 14px; font-weight: normal; color: #7F8C8D;">/ нэг бүтээгдэхүүн тутамд</span></div>
+                    <div style="font-weight: bold; color: #2980B9; font-size: 15px;">📦 Бүтээгдэхүүний дундаж ашиг (Average Product Profit - Хөнгөлөлт орсон дүн)</div>
+                    <div style="font-size: 26px; font-weight: bold; margin-top: 5px; color: #1B4F72;">{avg_product_profit_net:,.0f} ₮ <span style="font-size: 14px; font-weight: normal; color: #7F8C8D;">/ нэг бүтээгдэхүүн тутамд</span></div>
                     <div style="font-size: 12px; color: #7F8C8D; margin-top: 5px;">
-                        (Нийт бүтээгдэхүүний ашиг: <b>{total_product_profit:,.0f} ₮</b> | Нийт зарагдсан: <b>{total_products_sold} ширхэг</b> | Ашгийн дундаж марж: <b>{avg_product_margin:.1f}%</b>)
+                        (Нийт бохир ашиг: <b>{total_product_profit:,.0f} ₮</b> | Нийт хөнгөлөлт: <b style="color: #C0392B;">-{total_product_discount:,.0f} ₮</b> | <b>Нийт цэвэр ашиг: {total_product_net_profit:,.0f} ₮</b> | Дундаж цэвэр марж: <b>{avg_product_margin_net:.1f}%</b>)
                     </div>
                 </div>
                 """, unsafe_allow_html=True)

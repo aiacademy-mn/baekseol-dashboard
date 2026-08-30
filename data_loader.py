@@ -128,9 +128,19 @@ def parse_daily_sales(excel_file, service_master, product_master):
                 service_cash = 0.0
                 
             try:
+                baekseol_discount = float(row.iloc[16]) if not pd.isna(row.iloc[16]) else 0.0
+            except:
+                baekseol_discount = 0.0
+
+            try:
                 baekseol_cash = float(row.iloc[17]) if not pd.isna(row.iloc[17]) else 0.0
             except:
                 baekseol_cash = 0.0
+
+            try:
+                healthy_cell_discount = float(row.iloc[22]) if not pd.isna(row.iloc[22]) else 0.0
+            except:
+                healthy_cell_discount = 0.0
                 
             try:
                 healthy_cell_cash = float(row.iloc[23]) if not pd.isna(row.iloc[23]) else 0.0
@@ -239,6 +249,9 @@ def parse_daily_sales(excel_file, service_master, product_master):
                 "service_cash": service_cash,
                 "recognized_service_rev": recognized_service_rev,
                 "product_cash": baekseol_cash + healthy_cell_cash,
+                "baekseol_discount": baekseol_discount,
+                "healthy_cell_discount": healthy_cell_discount,
+                "product_discount": baekseol_discount + healthy_cell_discount,
                 "grand_total": grand_total,
                 "service_labor": service_labor if matched_service_name != "" else 0.0,
                 "service_material": service_material if matched_service_name != "" else 0.0,
