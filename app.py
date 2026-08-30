@@ -1101,6 +1101,8 @@ if check_password():
                 prod_details_df = pd.DataFrame(prod_details).sort_values(by="Зарагдсан тоо", ascending=False)
                 
                 # Average Product Profit Calculation & Display (including discounts)
+                total_products_sold = prod_details_df['Зарагдсан тоо'].sum() if not prod_details_df.empty else 0
+                total_product_profit = prod_details_df['Цэвэр ашиг'].sum() if not prod_details_df.empty else 0.0
                 total_product_discount = filtered_sales['product_discount'].sum() if not filtered_sales.empty and 'product_discount' in filtered_sales.columns else 0.0
                 total_product_revenue = prod_details_df['Нийт Борлуулалт'].sum() if not prod_details_df.empty else 0.0
                 total_product_net_profit = total_product_profit - total_product_discount
