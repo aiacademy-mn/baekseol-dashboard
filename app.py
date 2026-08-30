@@ -357,13 +357,16 @@ if check_password():
         rolled_prod_warehouse = roll_back_prod_warehouse(end_dt, prod_warehouse, sales_df, purchases_df, product_master)
         rolled_mat_warehouse = roll_back_mat_warehouse(end_dt, mat_warehouse, sales_df, purchases_df, recipe_bom)
         
-        # Build unit cost mapping for products
+        # Build unit cost & price mapping for products
         product_cost_map = {}
+        product_price_map = {}
         for idx, row in product_master.iterrows():
             name = str(row['Материалын нэр_clean']).strip() if 'Материалын нэр_clean' in row else str(row['Материалын нэр']).strip()
             cost = safe_float(row['Худалдан авах өртөг үнэ']) if 'Худалдан авах өртөг үнэ' in row else safe_float(row.get('Худалдан авсан үнэ', 0.0))
+            price = safe_float(row['Борлуулах үнэ'])
             if cost > 0.0:
                 product_cost_map[name] = cost
+            product_price_map[name] = price
 
         # Title Block
         st.markdown(f"<h1 class='main-title'>💅 BAEKSEOL BEAUTY Дашборд</h1>", unsafe_allow_html=True)
@@ -1063,64 +1066,105 @@ if check_password():
         with tab_products:
             st.subheader("📦 Бүтээгдэхүүний борлуулалтын ашиг")
             
-            prod_sold_sums = {}
+            # Calculate product-level stats by allocating Q and W discounts proportionally
+            product_stats = {}
+            baekseol_col_names = [
+                "Baekseol тос", "Baekseol мист", "Baekseol хөөс", 
+                "Baekseol крем", "Baekseol ампуль", "Baekseol хал/хүйт", "Baekseol нарны тос"
+            ]
+            
             for idx, row in filtered_sales.iterrows():
-                for p_name, qty in row['product_qtys'].items():
-                    prod_sold_sums[p_name] = prod_sold_sums.get(p_name, 0.0) + qty
-                    
-            if prod_sold_sums:
-                prod_sold_df = pd.DataFrame(list(prod_sold_sums.items()), columns=["Бүтээгдэхүүн", "Зарагдсан тоо"])
+                product_qtys = row['product_qtys']
+                if not product_qtys:
+                    continue
                 
-                prod_details = []
-                for idx, row in prod_sold_df.iterrows():
-                    p_name = row['Бүтээгдэхүүн']
-                    qty = row['Зарагдсан тоо']
-                    
-                    unit_cost = product_cost_map.get(p_name, 0.0)
-                    matching_master = product_master[product_master['Материалын нэр_clean'] == p_name]
-                    unit_price = 0.0
-                    if not matching_master.empty:
-                        unit_price = float(matching_master.iloc[0]['Борлуулах үнэ']) if not pd.isna(matching_master.iloc[0]['Борлуулах үнэ']) else 0.0
+                row_baekseol = {}
+                row_hc = {}
+                for p_name, qty in product_qtys.items():
+                    price = product_price_map.get(p_name, 0.0)
+                    if p_name in baekseol_col_names:
+                        row_baekseol[p_name] = (qty, price)
+                    else:
+                        row_hc[p_name] = (qty, price)
+                
+                baekseol_disc_total = safe_float(row.get('baekseol_discount', 0.0))
+                baekseol_std_rev_total = sum(qty * price for qty, price in row_baekseol.values())
+                
+                hc_disc_total = safe_float(row.get('healthy_cell_discount', 0.0))
+                hc_std_rev_total = sum(qty * price for qty, price in row_hc.values())
+                
+                def add_to_stats(row_prods, disc_total, std_rev_total):
+                    for p_name, (qty, price) in row_prods.items():
+                        std_rev = qty * price
+                        allocated_disc = (std_rev / std_rev_total * disc_total) if std_rev_total > 0 else 0.0
+                        unit_cost = product_cost_map.get(p_name, 0.0)
+                        total_cost = qty * unit_cost
                         
-                    total_revenue = qty * unit_price
-                    total_cogs = qty * unit_cost
-                    profit = total_revenue - total_cogs
-                    margin = (profit / total_revenue * 100) if total_revenue > 0 else 0
+                        if p_name not in product_stats:
+                            product_stats[p_name] = {
+                                "qty": 0.0,
+                                "gross_rev": 0.0,
+                                "discount": 0.0,
+                                "cost": 0.0
+                            }
+                        product_stats[p_name]["qty"] += qty
+                        product_stats[p_name]["gross_rev"] += std_rev
+                        product_stats[p_name]["discount"] += allocated_disc
+                        product_stats[p_name]["cost"] += total_cost
+                
+                add_to_stats(row_baekseol, baekseol_disc_total, baekseol_std_rev_total)
+                add_to_stats(row_hc, hc_disc_total, hc_std_rev_total)
+                
+            if product_stats:
+                prod_details = []
+                for p_name, stats in product_stats.items():
+                    qty = stats["qty"]
+                    gross_rev = stats["gross_rev"]
+                    discount = stats["discount"]
+                    net_rev = gross_rev - discount
+                    cogs = stats["cost"]
+                    net_profit = net_rev - cogs
+                    net_margin = (net_profit / net_rev * 100) if net_rev > 0 else 0.0
+                    unit_price = product_price_map.get(p_name, 0.0)
+                    unit_cost = product_cost_map.get(p_name, 0.0)
                     
                     prod_details.append({
                         "Бүтээгдэхүүн": p_name,
                         "Зарагдсан тоо": qty,
                         "Нэгжийн өртөг": unit_cost,
                         "Борлуулах нэгж үнэ": unit_price,
-                        "Нийт Борлуулалт": total_revenue,
-                        "Нийт Өртөг (COGS)": total_cogs,
-                        "Цэвэр ашиг": profit,
-                        "Ашгийн марж": margin
+                        "Нийт Борлуулалт (Бохир)": gross_rev,
+                        "Хөнгөлөлт": discount,
+                        "Нийт Цэвэр Орлого": net_rev,
+                        "Нийт Өртөг (COGS)": cogs,
+                        "Цэвэр ашиг": net_profit,
+                        "Ашгийн марж": net_margin
                     })
-                    
+                
                 prod_details_df = pd.DataFrame(prod_details).sort_values(by="Зарагдсан тоо", ascending=False)
                 
-                # Average Product Profit Calculation & Display (including discounts)
                 total_products_sold = prod_details_df['Зарагдсан тоо'].sum() if not prod_details_df.empty else 0
-                total_product_profit = prod_details_df['Цэвэр ашиг'].sum() if not prod_details_df.empty else 0.0
-                total_product_discount = filtered_sales['product_discount'].sum() if not filtered_sales.empty and 'product_discount' in filtered_sales.columns else 0.0
-                total_product_revenue = prod_details_df['Нийт Борлуулалт'].sum() if not prod_details_df.empty else 0.0
-                total_product_net_profit = total_product_profit - total_product_discount
+                total_product_revenue_gross = prod_details_df['Нийт Борлуулалт (Бохир)'].sum() if not prod_details_df.empty else 0.0
+                total_product_discount = prod_details_df['Хөнгөлөлт'].sum() if not prod_details_df.empty else 0.0
+                total_product_revenue_net = prod_details_df['Нийт Цэвэр Орлого'].sum() if not prod_details_df.empty else 0.0
+                total_product_cogs = prod_details_df['Нийт Өртөг (COGS)'].sum() if not prod_details_df.empty else 0.0
+                total_product_net_profit = prod_details_df['Цэвэр ашиг'].sum() if not prod_details_df.empty else 0.0
+                
                 avg_product_profit_net = total_product_net_profit / total_products_sold if total_products_sold > 0 else 0.0
-                avg_product_margin_net = (total_product_net_profit / total_product_revenue * 100) if total_product_revenue > 0 else 0.0
+                avg_product_margin_net = (total_product_net_profit / total_product_revenue_net * 100) if total_product_revenue_net > 0 else 0.0
                 
                 st.markdown(f"""
                 <div style="background-color: #EBF5FB; padding: 15px; border-radius: 8px; border: 1px solid #AED6F1; margin-bottom: 20px; font-family: 'DM Sans', sans-serif;">
                     <div style="font-weight: bold; color: #2980B9; font-size: 15px;">📦 Бүтээгдэхүүний дундаж ашиг (Average Product Profit - Хөнгөлөлт орсон дүн)</div>
                     <div style="font-size: 26px; font-weight: bold; margin-top: 5px; color: #1B4F72;">{avg_product_profit_net:,.0f} ₮ <span style="font-size: 14px; font-weight: normal; color: #7F8C8D;">/ нэг бүтээгдэхүүн тутамд</span></div>
                     <div style="font-size: 12px; color: #7F8C8D; margin-top: 5px;">
-                        (Нийт бохир ашиг: <b>{total_product_profit:,.0f} ₮</b> | Нийт хөнгөлөлт: <b style="color: #C0392B;">-{total_product_discount:,.0f} ₮</b> | <b>Нийт цэвэр ашиг: {total_product_net_profit:,.0f} ₮</b> | Дундаж цэвэр марж: <b>{avg_product_margin_net:.1f}%</b>)
+                        (Нийт бохир борлуулалт: <b>{total_product_revenue_gross:,.0f} ₮</b> | Нийт хөнгөлөлт: <b style="color: #C0392B;">-{total_product_discount:,.0f} ₮</b> | Нийт бодит орлого: <b>{total_product_revenue_net:,.0f} ₮</b> | <b>Нийт цэвэр ашиг: {total_product_net_profit:,.0f} ₮</b> | Дундаж цэвэр марж: <b>{avg_product_margin_net:.1f}%</b>)
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
                 
                 disp_prod = prod_details_df.copy()
-                for col in ["Нэгжийн өртөг", "Борлуулах нэгж үнэ", "Нийт Борлуулалт", "Нийт Өртөг (COGS)", "Цэвэр ашиг"]:
+                for col in ["Нэгжийн өртөг", "Борлуулах нэгж үнэ", "Нийт Борлуулалт (Бохир)", "Хөнгөлөлт", "Нийт Цэвэр Орлого", "Нийт Өртөг (COGS)", "Цэвэр ашиг"]:
                     disp_prod[col] = disp_prod[col].map('{:,.0f} ₮'.format)
                 disp_prod["Ашгийн марж"] = disp_prod["Ашгийн марж"].map('{:.1f}%'.format)
                 
