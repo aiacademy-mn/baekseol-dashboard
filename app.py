@@ -1134,6 +1134,7 @@ if check_password():
                         "Зарагдсан тоо": qty,
                         "Нэгжийн өртөг": unit_cost,
                         "Борлуулах нэгж үнэ": unit_price,
+                        "Нэгж ашиг": unit_price - unit_cost,
                         "Нийт Борлуулалт (Бохир)": gross_rev,
                         "Хөнгөлөлт": discount,
                         "Нийт Цэвэр Орлого": net_rev,
@@ -1165,7 +1166,7 @@ if check_password():
                 """, unsafe_allow_html=True)
                 
                 disp_prod = prod_details_df.copy()
-                for col in ["Нэгжийн өртөг", "Борлуулах нэгж үнэ", "Нийт Борлуулалт (Бохир)", "Хөнгөлөлт", "Нийт Цэвэр Орлого", "Нийт Өртөг (COGS)", "Цэвэр ашиг"]:
+                for col in ["Нэгжийн өртөг", "Борлуулах нэгж үнэ", "Нэгж ашиг", "Нийт Борлуулалт (Бохир)", "Хөнгөлөлт", "Нийт Цэвэр Орлого", "Нийт Өртөг (COGS)", "Цэвэр ашиг"]:
                     disp_prod[col] = disp_prod[col].map('{:,.0f} ₮'.format)
                 disp_prod["Ашгийн марж"] = disp_prod["Ашгийн марж"].map('{:.1f}%'.format)
                 
