@@ -394,6 +394,9 @@ if check_password():
         # 1. Revenue
         total_cash_rev = filtered_sales['grand_total'].sum()
         total_accrual_rev = filtered_sales['recognized_service_rev'].sum() + filtered_sales['product_cash'].sum()
+        service_cash_rev_period = filtered_sales['service_cash'].sum() if not filtered_sales.empty else 0.0
+        product_cash_rev_period = filtered_sales['product_cash'].sum() if not filtered_sales.empty else 0.0
+        service_accrual_rev_period = filtered_sales['recognized_service_rev'].sum() if not filtered_sales.empty else 0.0
         
         # 2. Wage and Materials Cost from Services
         total_labor_cost = filtered_sales['service_labor'].sum()
@@ -695,6 +698,40 @@ if check_password():
                         <div style="font-size:11px; color:#666; margin-top:5px;">(Орсон мөнгө - Зарлага - Шимтгэл)</div>
                     </div>
                     """, unsafe_allow_html=True)
+            # Product and Service Revenue split
+            st.markdown("<br>", unsafe_allow_html=True)
+            col_split1, col_split2 = st.columns(2)
+            
+            if report_basis == "Кассын сууриар (Google Sheet-тэй 100% тулгах горим)":
+                with col_split1:
+                    st.markdown(f"""
+                    <div style="background-color: #F8F9FA; padding: 12px; border-radius: 6px; border: 1px solid #E9ECEF; text-align: center; font-family: 'DM Sans', sans-serif;">
+                        <div style="font-size: 13px; color: #7F8C8D; font-weight: 500;">💇 Үйлчилгээний Кассын Орлого</div>
+                        <div style="font-size: 20px; font-weight: bold; color: #16A085; margin-top: 5px;">{service_cash_rev_period:,.0f} ₮</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                with col_split2:
+                    st.markdown(f"""
+                    <div style="background-color: #F8F9FA; padding: 12px; border-radius: 6px; border: 1px solid #E9ECEF; text-align: center; font-family: 'DM Sans', sans-serif;">
+                        <div style="font-size: 13px; color: #7F8C8D; font-weight: 500;">📦 Бүтээгдэхүүний Кассын Орлого</div>
+                        <div style="font-size: 20px; font-weight: bold; color: #2980B9; margin-top: 5px;">{product_cash_rev_period:,.0f} ₮</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+            else:
+                with col_split1:
+                    st.markdown(f"""
+                    <div style="background-color: #F8F9FA; padding: 12px; border-radius: 6px; border: 1px solid #E9ECEF; text-align: center; font-family: 'DM Sans', sans-serif;">
+                        <div style="font-size: 13px; color: #7F8C8D; font-weight: 500;">💇 Хэрэгжсэн Үйлчилгээний Орлого (Accrual)</div>
+                        <div style="font-size: 20px; font-weight: bold; color: #16A085; margin-top: 5px;">{service_accrual_rev_period:,.0f} ₮</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                with col_split2:
+                    st.markdown(f"""
+                    <div style="background-color: #F8F9FA; padding: 12px; border-radius: 6px; border: 1px solid #E9ECEF; text-align: center; font-family: 'DM Sans', sans-serif;">
+                        <div style="font-size: 13px; color: #7F8C8D; font-weight: 500;">📦 Хэрэгжсэн Бүтээгдэхүүний Орлого (Accrual)</div>
+                        <div style="font-size: 20px; font-weight: bold; color: #2980B9; margin-top: 5px;">{product_cash_rev_period:,.0f} ₮</div>
+                    </div>
+                    """, unsafe_allow_html=True)
             st.markdown("<br>", unsafe_allow_html=True)
             
             # Calculate Liabilities rolled back to end_dt!
@@ -972,6 +1009,22 @@ if check_password():
             service_counts['booit_profit'] = service_counts['accrual_rev'] - service_counts['total_cost']
             service_counts['margin_pct'] = (service_counts['booit_profit'] / service_counts['accrual_rev'] * 100).fillna(0)
             
+            # Average Service Profit Calculation & Display
+            total_service_visits = service_counts['count'].sum() if not service_counts.empty else 0
+            total_service_profit = service_counts['booit_profit'].sum() if not service_counts.empty else 0.0
+            avg_service_profit = total_service_profit / total_service_visits if total_service_visits > 0 else 0.0
+            avg_service_margin = (total_service_profit / service_counts['accrual_rev'].sum() * 100) if not service_counts.empty and service_counts['accrual_rev'].sum() > 0 else 0.0
+            
+            st.markdown(f"""
+            <div style="background-color: #E8F8F5; padding: 15px; border-radius: 8px; border: 1px solid #A3E4D7; margin-bottom: 20px; font-family: 'DM Sans', sans-serif;">
+                <div style="font-weight: bold; color: #16A085; font-size: 15px;">💇 Үйлчилгээний дундаж ашиг (Average Service Profit)</div>
+                <div style="font-size: 26px; font-weight: bold; margin-top: 5px; color: #117864;">{avg_service_profit:,.0f} ₮ <span style="font-size: 14px; font-weight: normal; color: #7F8C8D;">/ нэг үйлчилгээ тутамд</span></div>
+                <div style="font-size: 12px; color: #7F8C8D; margin-top: 5px;">
+                    (Нийт үйлчилгээний ашиг: <b>{total_service_profit:,.0f} ₮</b> | Нийт үзүүлсэн: <b>{total_service_visits} удаа</b> | Ашгийн дундаж марж: <b>{avg_service_margin:.1f}%</b>)
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
             service_counts = service_counts.sort_values(by="count", ascending=False)
             
             display_services = service_counts.copy()
@@ -1042,6 +1095,22 @@ if check_password():
                     })
                     
                 prod_details_df = pd.DataFrame(prod_details).sort_values(by="Зарагдсан тоо", ascending=False)
+                
+                # Average Product Profit Calculation & Display
+                total_products_sold = prod_details_df['Зарагдсан тоо'].sum() if not prod_details_df.empty else 0
+                total_product_profit = prod_details_df['Цэвэр ашиг'].sum() if not prod_details_df.empty else 0.0
+                avg_product_profit = total_product_profit / total_products_sold if total_products_sold > 0 else 0.0
+                avg_product_margin = (total_product_profit / prod_details_df['Нийт Борлуулалт'].sum() * 100) if not prod_details_df.empty and prod_details_df['Нийт Борлуулалт'].sum() > 0 else 0.0
+                
+                st.markdown(f"""
+                <div style="background-color: #EBF5FB; padding: 15px; border-radius: 8px; border: 1px solid #AED6F1; margin-bottom: 20px; font-family: 'DM Sans', sans-serif;">
+                    <div style="font-weight: bold; color: #2980B9; font-size: 15px;">📦 Бүтээгдэхүүний дундаж ашиг (Average Product Profit)</div>
+                    <div style="font-size: 26px; font-weight: bold; margin-top: 5px; color: #1B4F72;">{avg_product_profit:,.0f} ₮ <span style="font-size: 14px; font-weight: normal; color: #7F8C8D;">/ нэг бүтээгдэхүүн тутамд</span></div>
+                    <div style="font-size: 12px; color: #7F8C8D; margin-top: 5px;">
+                        (Нийт бүтээгдэхүүний ашиг: <b>{total_product_profit:,.0f} ₮</b> | Нийт зарагдсан: <b>{total_products_sold} ширхэг</b> | Ашгийн дундаж марж: <b>{avg_product_margin:.1f}%</b>)
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
                 
                 disp_prod = prod_details_df.copy()
                 for col in ["Нэгжийн өртөг", "Борлуулах нэгж үнэ", "Нийт Борлуулалт", "Нийт Өртөг (COGS)", "Цэвэр ашиг"]:
