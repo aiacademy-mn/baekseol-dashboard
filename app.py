@@ -359,7 +359,7 @@ if check_password():
         product_cost_map = {}
         for idx, row in product_master.iterrows():
             name = row['Материалын нэр_clean']
-            product_cost_map[name] = safe_float(row['Худалдан авсан үнэ'])
+            product_cost_map[name] = safe_float(row['Худалдан авах өртөг үнэ']) if 'Худалдан авах өртөг үнэ' in row else safe_float(row.get('Худалдан авсан үнэ', 0.0))
 
         # Title Block
         st.markdown(f"<h1 class='main-title'>💅 BAEKSEOL BEAUTY Дашборд</h1>", unsafe_allow_html=True)
