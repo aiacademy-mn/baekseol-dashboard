@@ -164,7 +164,7 @@ if check_password():
             if not product_master.empty:
                 for idx, row in product_master.iterrows():
                     name_clean = str(row['Материалын нэр_clean']).strip() if 'Материалын нэр_clean' in row else str(row['Материалын нэр']).strip()
-                    cost_map[name_clean] = safe_float(row['Худалдан авсан үнэ'])
+                    cost_map[name_clean] = safe_float(row['Худалдан авах өртөг үнэ']) if 'Худалдан авах өртөг үнэ' in row else safe_float(row.get('Худалдан авсан үнэ', 0.0))
                     
             pw = prod_warehouse.copy()
             sales_after = sales_df[sales_df['date'] > end_dt] if not sales_df.empty else pd.DataFrame()
