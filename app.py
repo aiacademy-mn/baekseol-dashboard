@@ -164,7 +164,9 @@ if check_password():
             if not product_master.empty:
                 for idx, row in product_master.iterrows():
                     name_clean = str(row['Материалын нэр_clean']).strip() if 'Материалын нэр_clean' in row else str(row['Материалын нэр']).strip()
-                    cost_map[name_clean] = safe_float(row['Худалдан авах өртөг үнэ']) if 'Худалдан авах өртөг үнэ' in row else safe_float(row.get('Худалдан авсан үнэ', 0.0))
+                    cost = safe_float(row['Худалдан авах өртөг үнэ']) if 'Худалдан авах өртөг үнэ' in row else safe_float(row.get('Худалдан авсан үнэ', 0.0))
+                    if cost > 0.0:
+                        cost_map[name_clean] = cost
                     
             pw = prod_warehouse.copy()
             sales_after = sales_df[sales_df['date'] > end_dt] if not sales_df.empty else pd.DataFrame()
@@ -358,8 +360,10 @@ if check_password():
         # Build unit cost mapping for products
         product_cost_map = {}
         for idx, row in product_master.iterrows():
-            name = row['Материалын нэр_clean']
-            product_cost_map[name] = safe_float(row['Худалдан авах өртөг үнэ']) if 'Худалдан авах өртөг үнэ' in row else safe_float(row.get('Худалдан авсан үнэ', 0.0))
+            name = str(row['Материалын нэр_clean']).strip() if 'Материалын нэр_clean' in row else str(row['Материалын нэр']).strip()
+            cost = safe_float(row['Худалдан авах өртөг үнэ']) if 'Худалдан авах өртөг үнэ' in row else safe_float(row.get('Худалдан авсан үнэ', 0.0))
+            if cost > 0.0:
+                product_cost_map[name] = cost
 
         # Title Block
         st.markdown(f"<h1 class='main-title'>💅 BAEKSEOL BEAUTY Дашборд</h1>", unsafe_allow_html=True)
